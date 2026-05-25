@@ -1,0 +1,22 @@
+{
+  "_comment": "JDM Watch Business — Lambda config. Replaces fees.csv as of 2026-05-13.",
+
+  "ebay_fvf_rate":          "0.15",
+  "sales_tax_blend":        "0.10",
+  "shipping_to_buyer":      "6.00",
+  "labor_rate":             "1.00",
+  "customs_rate":           "0.15",
+  "paypal_rate":            "0.029",
+  "paypal_flat":            "0.30",
+
+  "buyee_platform_jpy":     "500",
+  "buyee_service_jpy":      "500",
+  "domestic_shipping_jpy":  "900",
+  "intl_ship_estimate_usd": "40",
+
+  "default_ad_rate_pct":    "5",
+  "min_profit_usd":         "20",
+  "target_roi_pct_fast":    "20",
+  "target_roi_pct_standard":"33",
+  "target_roi_pct_patient": "50"
+}

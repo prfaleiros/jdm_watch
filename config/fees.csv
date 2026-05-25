@@ -1,0 +1,17 @@
+# JDM Watch Business - Configuration
+# Updated 2026-04-09: Buyee fees increased effective April 1
+ebay_fvf_rate,0.15
+sales_tax_blend,0.10
+ad_fee_rate,0
+shipping_to_buyer,6.00
+paypal_rate,0.029
+paypal_flat,0.30
+labor_rate,1.00
+profit_target_fast,30
+profit_target_standard,50
+profit_target_patient,75
+customs_rate,0.15
+buyee_platform_jpy,500
+buyee_service_jpy,500
+domestic_shipping_jpy,900
+intl_ship_estimate_usd,40

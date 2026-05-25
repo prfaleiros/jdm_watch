@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\jdm-watch-business\" -Force)",
+      "Bash(Select-Object Name, Mode)"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# CDK
+cdk/cdk.out/
+cdk/.venv/
+
+# Streamlit secrets — NEVER commit
+streamlit_app/.streamlit/secrets.toml
+
+# Logs and runtime files
+logs/
+*.log
+nohup.out
+streamlit_app/nohup.out
+.streamlit_app.pid
+
+# Local photos (S3 is the source of truth)
+photos/
+
+# OS
+.DS_Store
+Thumbs.db
