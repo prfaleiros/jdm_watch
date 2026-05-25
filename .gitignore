@@ -23,6 +23,9 @@ streamlit_app/nohup.out
 # Local photos (S3 is the source of truth)
 photos/
 
+# Claude Code
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
