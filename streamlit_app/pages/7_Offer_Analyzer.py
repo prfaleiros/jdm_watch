@@ -6,7 +6,7 @@ st.set_page_config(page_title="Offer Analyzer", layout="centered", page_icon="âŒ
 st.title("Offer Analyzer")
 st.caption("Evaluate an eBay offer and see counter suggestions in real time.")
 
-ELIGIBLE_STATUSES = {"listed", "ready_to_list", "on_bench"}
+ELIGIBLE_STATUSES = {"listed"}
 
 
 @st.cache_data(ttl=60)
@@ -26,13 +26,13 @@ eligible = [
 ]
 
 if not eligible:
-    st.info("No eligible watches (listed / ready-to-list / on bench).")
+    st.info("No listed watches found.")
     st.stop()
 
 
 def _label(w):
-    status = STATUS_LABELS.get(w.get("current_status", ""), w.get("current_status", ""))
-    return f"{w.get('brand', '')} {w.get('collection', '')} {w.get('reference', '')} Â· {status}"
+    wid = w.get("watch_id", "")[-6:].upper()
+    return f"{w.get('brand', '')} {w.get('collection', '')} {w.get('reference', '')} [{wid}]"
 
 
 watch_id = st.selectbox(
