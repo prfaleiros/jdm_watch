@@ -15,7 +15,7 @@
   "intl_ship_estimate_usd": "40",
 
   "default_ad_rate_pct":    "5",
-  "min_profit_usd":         "20",
+  "min_profit_usd":         "50",
   "target_roi_pct_fast":    "20",
   "target_roi_pct_standard":"33",
   "target_roi_pct_patient": "50"

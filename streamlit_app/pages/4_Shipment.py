@@ -91,14 +91,14 @@ with tab_allocate:
         st.info("No unlinked business watches found.")
     else:
         eligible_labels = {
-            f"{w['brand']} {w['collection']} {w['reference']}": w["watch_id"]
+            f"[{w['watch_id']}] {w['brand']} {w['collection']} {w['reference']}": w["watch_id"]
             for w in eligible
         }
         selected_labels = st.multiselect(
             "Watches in this shipment",
             list(eligible_labels.keys()),
             default=[
-                f"{w['brand']} {w['collection']} {w['reference']}"
+                f"[{w['watch_id']}] {w['brand']} {w['collection']} {w['reference']}"
                 for w in eligible
                 if w.get("shipment_id") == shipment_id
             ],

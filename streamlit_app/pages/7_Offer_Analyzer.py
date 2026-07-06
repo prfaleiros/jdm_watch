@@ -134,7 +134,7 @@ def counter_price(target_profit: float) -> float:
 
 tiers = [
     ("Break-even",         counter_price(0)),
-    ("$20 min profit",     counter_price(20)),
+    ("$50 min profit",     counter_price(50)),
     ("20% ROI  (fast)",    counter_price(max(landed * 0.20, 20))),
     ("33% ROI  (std)",     counter_price(max(landed * 0.33, 20))),
     ("50% ROI  (patient)", counter_price(max(landed * 0.50, 20))),
