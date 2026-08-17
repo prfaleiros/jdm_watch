@@ -50,7 +50,10 @@ Profit target per tier = `max(landed_cost × roi_pct, min_profit_usd)`.
 lookup via Claude, costs, danger-zone delete) · `3_New_Watch.py` · `4_Shipment.py` ·
 `5_Bid_Calculator.py` · `6_Import_Shipment.py` · `7_Offer_Analyzer.py` (real-time eBay offer
 evaluation + counter suggestions, "listed" status only) · `8_eBay_Drafts.py` (generates an
-eBay bulk-upload draft CSV from selected watches).
+eBay bulk-upload draft CSV from selected watches) · `9_Financials.py` (Capital Deployed /
+Realized P&L / Style Performance aggregated from existing watch records, plus "Ask Your
+Data" — sends the full inventory+sales CSV to `claude-opus-4-5` for free-form analysis
+instead of canned reports; excludes `is_personal` watches from all financial calcs).
 
 **Convention:** every watch-selection dropdown must show `[watch_id] Brand Collection
 Reference` — duplicate references without the ID prefix caused repeated confusion bugs
@@ -72,6 +75,19 @@ to any new dropdown from the start.
   `$` in the column label instead, keep `format="%.2f"`.
 - Don't guess AWS resource names (bucket names, etc.) in commands — look them up
   (`aws s3 ls --profile prfaleiros`) rather than fabricating a plausible pattern.
+- **Local dev venv drift:** the root `.venv` can fall behind `streamlit_app/requirements.txt`
+  (e.g. `anthropic` was in requirements.txt but not actually installed locally). If a page
+  that calls Claude throws `ModuleNotFoundError` locally, run
+  `.venv/Scripts/pip.exe install -r streamlit_app/requirements.txt` before assuming it's a
+  code bug — Streamlit Cloud installs fresh from requirements.txt every deploy, so this only
+  bites local testing.
+- `manage.sh` assumes `streamlit` is on PATH; in a fresh shell without the venv activated,
+  call `.venv/Scripts/streamlit.exe` directly instead.
+- Streamlit widgets that are set programmatically (e.g. an "example question" button filling
+  a text area) need a stable `key=` bound to `st.session_state`, not just `value=`— without a
+  key, the value is lost on the next rerun (e.g. when a separate submit button is clicked).
+  This bit both `2_Watch.py`'s pitch text area (pre-existing, unfixed) and an early version of
+  `9_Financials.py`'s "Ask Your Data" box (fixed).
 
 ## Deferred / open TODOs
 
