@@ -69,8 +69,12 @@ def watch_item(data: dict) -> dict:
         "sale_platform": data.get("sale_platform"),
         "sale_date": data.get("sale_date"),
         "shipping_cost_usd": data.get("shipping_cost_usd"),
+        "shipping_label_source": data.get("shipping_label_source", ""),
         "platform_fees_usd": data.get("platform_fees_usd"),
         "net_profit_usd": data.get("net_profit_usd"),
+        # cost-basis split (see lambdas/shared/python/costs.py)
+        "total_presale_costs_usd": data.get("total_presale_costs_usd", 0),
+        "total_cost_basis_usd": data.get("total_cost_basis_usd"),
         # flags
         "is_personal": data.get("is_personal", False),
         "current_status": data.get("current_status", "watching"),
@@ -141,4 +145,30 @@ def shipment_watch_link(shipment_id: str, watch_id: str, auction_price_jpy: floa
         "shipment_id": shipment_id,
         "watch_id": watch_id,
         "auction_price_jpy": auction_price_jpy,
+    }
+
+
+def ad_campaign_item(data: dict) -> dict:
+    campaign_id = data.get("campaign_id") or new_id()
+    ts = now_iso()
+    return {
+        "PK": f"CAMP#{campaign_id}",
+        "SK": "META",
+        "entity_type": "AD_CAMPAIGN",
+        "campaign_id": campaign_id,
+        "created_at": ts,
+        "platform": data.get("platform", "ebay_offsite"),
+        "total_cost_usd": data["total_cost_usd"],
+        "campaign_date": data.get("campaign_date", ts[:10]),
+        "notes": data.get("notes", ""),
+    }
+
+
+def ad_campaign_watch_link(campaign_id: str, watch_id: str) -> dict:
+    return {
+        "PK": f"CAMP#{campaign_id}",
+        "SK": f"W#{watch_id}",
+        "entity_type": "AD_CAMPAIGN_WATCH",
+        "campaign_id": campaign_id,
+        "watch_id": watch_id,
     }

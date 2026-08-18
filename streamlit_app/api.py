@@ -166,3 +166,18 @@ def allocate_shipment(shipment_id: str) -> dict:
     _raise(r, f"allocate_shipment({shipment_id})")
     log.info("allocate_shipment(%s) OK", shipment_id)
     return r.json()
+
+
+def create_campaign(data: dict) -> dict:
+    r = requests.post(_url("campaigns"), headers=_headers(), json=data)
+    _raise(r, "create_campaign")
+    resp = r.json()
+    log.info("create_campaign → %s", resp.get("campaign_id"))
+    return resp
+
+
+def allocate_campaign(campaign_id: str) -> dict:
+    r = requests.post(_url(f"campaigns/{campaign_id}/allocate"), headers=_headers(), json={})
+    _raise(r, f"allocate_campaign({campaign_id})")
+    log.info("allocate_campaign(%s) OK", campaign_id)
+    return r.json()

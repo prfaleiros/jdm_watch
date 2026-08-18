@@ -1,26 +1,7 @@
 from models import now_iso
 from db import get_item, delete_item, update_fields, query_pk, api_response
-
-
-def _recalc(watch_id: str, watch: dict) -> tuple[float, float]:
-    all_costs = query_pk(f"W#{watch_id}", "ADDCOST#")
-    total = round(sum(c.get("amount_usd", 0) for c in all_costs), 2)
-
-    auction = watch.get("auction_price_usd") or 0
-    customs = watch.get("customs_duty_usd") or 0
-    intl = watch.get("intl_shipping_usd") or 0
-    buyee_jpy = (
-        (watch.get("buyee_platform_jpy") or 0)
-        + (watch.get("buyee_inspection_jpy") or 0)
-        + (watch.get("domestic_shipping_jpy") or 0)
-    )
-    jpy_rate = (
-        watch["auction_price_usd"] / watch["auction_price_jpy"]
-        if watch.get("auction_price_jpy") and watch.get("auction_price_usd") else 0
-    )
-    buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
-    landed = round(auction + customs + intl + buyee_usd + total, 2)
-    return total, landed
+from config import load_config
+from costs import recalc_landed, split_addcost_totals, total_cost_basis, recalc_profit
 
 
 def handler(event, context):
@@ -33,15 +14,29 @@ def handler(event, context):
     delete_item(f"W#{watch_id}", f"ADDCOST#{cost_id}")
 
     watch = get_item(f"W#{watch_id}", "META")
-    total, landed = _recalc(watch_id, watch)
-    update_fields(f"W#{watch_id}", "META", {
-        "total_additional_costs_usd": total,
+    all_costs = query_pk(f"W#{watch_id}", "ADDCOST#")
+    presale, additional = split_addcost_totals(all_costs)
+    landed = recalc_landed(watch)
+    cost_basis = total_cost_basis(landed, presale)
+
+    merged = {**watch, "total_landed_cost_usd": landed, "total_additional_costs_usd": additional}
+    net_profit = recalc_profit(merged, load_config())
+
+    watch_updates = {
+        "total_additional_costs_usd": additional,
+        "total_presale_costs_usd": presale,
         "total_landed_cost_usd": landed,
+        "total_cost_basis_usd": cost_basis,
         "updated_at": now_iso(),
-    })
+    }
+    if net_profit is not None:
+        watch_updates["net_profit_usd"] = net_profit
+    update_fields(f"W#{watch_id}", "META", watch_updates)
 
     return api_response(200, {
         "cost_id": cost_id,
-        "total_additional_costs_usd": total,
+        "total_additional_costs_usd": additional,
+        "total_presale_costs_usd": presale,
         "total_landed_cost_usd": landed,
+        "total_cost_basis_usd": cost_basis,
     })

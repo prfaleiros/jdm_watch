@@ -1,6 +1,8 @@
 import json
 from models import additional_cost_item, now_iso
 from db import get_item, put_item, query_pk, update_fields, api_response
+from config import load_config
+from costs import recalc_landed, split_addcost_totals, total_cost_basis, recalc_profit
 
 
 def handler(event, context):
@@ -17,34 +19,32 @@ def handler(event, context):
     cost = additional_cost_item(watch_id, body)
     put_item(cost)
 
-    # Recalculate total additional costs
     all_costs = query_pk(f"W#{watch_id}", "ADDCOST#")
-    total = sum(c.get("amount_usd", 0) for c in all_costs)
+    presale, additional = split_addcost_totals(all_costs)
+    landed = recalc_landed(watch)
+    cost_basis = total_cost_basis(landed, presale)
 
-    # Recalculate landed cost
-    auction = watch.get("auction_price_usd") or 0
-    customs = watch.get("customs_duty_usd") or 0
-    intl = watch.get("intl_shipping_usd") or 0
-    buyee_jpy = (
-        (watch.get("buyee_platform_jpy") or 0)
-        + (watch.get("buyee_inspection_jpy") or 0)
-        + (watch.get("domestic_shipping_jpy") or 0)
-    )
-    jpy_rate = 0
-    if watch.get("auction_price_jpy") and watch.get("auction_price_usd"):
-        jpy_rate = watch["auction_price_usd"] / watch["auction_price_jpy"]
-    buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
-    landed = round(auction + customs + intl + buyee_usd + total, 2)
+    # net_profit_usd wasn't recalculated here before (pre-existing gap) — fix it while
+    # touching this code, so adding/editing a cost on an already-sold watch stays in sync.
+    merged = {**watch, "total_landed_cost_usd": landed, "total_additional_costs_usd": additional}
+    net_profit = recalc_profit(merged, load_config())
 
-    update_fields(f"W#{watch_id}", "META", {
-        "total_additional_costs_usd": round(total, 2),
+    updates = {
+        "total_additional_costs_usd": additional,
+        "total_presale_costs_usd": presale,
         "total_landed_cost_usd": landed,
+        "total_cost_basis_usd": cost_basis,
         "updated_at": now_iso(),
-    })
+    }
+    if net_profit is not None:
+        updates["net_profit_usd"] = net_profit
+    update_fields(f"W#{watch_id}", "META", updates)
 
     return api_response(201, {
         "watch_id": watch_id,
         "cost_id": cost["cost_id"],
-        "total_additional_costs": round(total, 2),
+        "total_additional_costs": additional,
+        "total_presale_costs_usd": presale,
         "total_landed_cost": landed,
+        "total_cost_basis_usd": cost_basis,
     })

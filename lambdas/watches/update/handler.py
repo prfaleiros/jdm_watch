@@ -2,6 +2,7 @@ import json
 from models import now_iso
 from db import get_item, update_fields, api_response
 from config import load_config
+from costs import recalc_landed, recalc_profit, total_cost_basis
 
 
 # Fields that can be directly updated (not derived)
@@ -13,43 +14,12 @@ EDITABLE_FIELDS = {
     "buyee_platform_jpy", "buyee_inspection_jpy", "domestic_shipping_jpy",
     "customs_duty_usd", "shipment_id", "intl_shipping_usd",
     "sale_price_usd", "sale_platform", "sale_date",
-    "shipping_cost_usd", "platform_fees_usd",
+    "shipping_cost_usd", "shipping_label_source", "platform_fees_usd",
     "is_personal", "notes", "total_labor_hours", "feature_pitch",
     "water_resistance", "movement_type", "crystal_type",
     "jewel_count", "bracelet_material", "power_reserve",
     "thumbnail_key",
 }
-
-
-def recalc_landed_cost(watch: dict) -> float:
-    auction = watch.get("auction_price_usd") or 0
-    customs = watch.get("customs_duty_usd") or 0
-    intl = watch.get("intl_shipping_usd") or 0
-    additional = watch.get("total_additional_costs_usd") or 0
-    # Buyee fees — convert from JPY if we have a USD auction price and JPY auction price
-    buyee_fees_jpy = (
-        (watch.get("buyee_platform_jpy") or 0)
-        + (watch.get("buyee_inspection_jpy") or 0)
-        + (watch.get("domestic_shipping_jpy") or 0)
-    )
-    jpy_rate = 0
-    if watch.get("auction_price_jpy") and watch.get("auction_price_usd"):
-        jpy_rate = watch["auction_price_usd"] / watch["auction_price_jpy"]
-    buyee_fees_usd = buyee_fees_jpy * jpy_rate if jpy_rate else 0
-
-    return round(auction + customs + intl + buyee_fees_usd + additional, 2)
-
-
-def recalc_net_profit(watch: dict, cfg: dict) -> float | None:
-    if not watch.get("sale_price_usd"):
-        return None
-    sale = watch["sale_price_usd"]
-    fees = watch.get("platform_fees_usd") or 0
-    shipping = watch.get("shipping_cost_usd") or 0
-    landed = watch.get("total_landed_cost_usd") or 0
-    labor_hours = watch.get("total_labor_hours") or 0
-    labor_rate = float(cfg.get("labor_rate", "1"))
-    return round(sale - fees - shipping - landed - (labor_hours * labor_rate), 2)
 
 
 def handler(event, context):
@@ -66,11 +36,17 @@ def handler(event, context):
 
     cfg = load_config()
 
-    # Apply updates to local copy for recalc
+    # Apply updates to local copy for recalc. total_presale_costs_usd /
+    # total_additional_costs_usd are untouched here (this endpoint never changes ADDCOST
+    # records), so only landed + cost_basis + profit need recomputing.
     merged = {**watch, **updates}
-    updates["total_landed_cost_usd"] = recalc_landed_cost(merged)
+    updates["total_landed_cost_usd"] = recalc_landed(merged)
     merged["total_landed_cost_usd"] = updates["total_landed_cost_usd"]
-    net = recalc_net_profit(merged, cfg)
+    updates["total_cost_basis_usd"] = total_cost_basis(
+        updates["total_landed_cost_usd"], merged.get("total_presale_costs_usd") or 0
+    )
+    merged["total_cost_basis_usd"] = updates["total_cost_basis_usd"]
+    net = recalc_profit(merged, cfg)
     if net is not None:
         updates["net_profit_usd"] = net
     updates["updated_at"] = now_iso()

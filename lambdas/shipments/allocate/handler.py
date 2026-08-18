@@ -1,6 +1,7 @@
-import json
 from db import get_item, query_pk, update_fields, api_response
 from models import now_iso
+from config import load_config
+from costs import recalc_landed, total_cost_basis, recalc_profit
 
 
 def handler(event, context):
@@ -20,35 +21,32 @@ def handler(event, context):
     if total_auction_jpy == 0:
         return api_response(400, {"error": "Total auction price is zero, cannot allocate"})
 
+    cfg = load_config()
     allocations = []
     for link in links:
         weight = link["auction_price_jpy"] / total_auction_jpy
         allocated = round(total_cost * weight, 2)
         watch_id = link["watch_id"]
 
-        # Update the watch record with allocated shipping
         watch = get_item(f"W#{watch_id}", "META")
         if watch:
-            update_fields(f"W#{watch_id}", "META", {
+            merged = {**watch, "intl_shipping_usd": allocated}
+            landed = recalc_landed(merged)
+            presale = watch.get("total_presale_costs_usd") or 0
+            cost_basis = total_cost_basis(landed, presale)
+            merged["total_landed_cost_usd"] = landed
+            net_profit = recalc_profit(merged, cfg)
+
+            watch_updates = {
                 "intl_shipping_usd": allocated,
                 "shipment_id": shipment_id,
+                "total_landed_cost_usd": landed,
+                "total_cost_basis_usd": cost_basis,
                 "updated_at": now_iso(),
-            })
-            # Recalc landed cost
-            auction = watch.get("auction_price_usd") or 0
-            customs = watch.get("customs_duty_usd") or 0
-            additional = watch.get("total_additional_costs_usd") or 0
-            buyee_jpy = (
-                (watch.get("buyee_platform_jpy") or 0)
-                + (watch.get("buyee_inspection_jpy") or 0)
-                + (watch.get("domestic_shipping_jpy") or 0)
-            )
-            jpy_rate = 0
-            if watch.get("auction_price_jpy") and watch.get("auction_price_usd"):
-                jpy_rate = watch["auction_price_usd"] / watch["auction_price_jpy"]
-            buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
-            landed = round(auction + customs + allocated + buyee_usd + additional, 2)
-            update_fields(f"W#{watch_id}", "META", {"total_landed_cost_usd": landed})
+            }
+            if net_profit is not None:
+                watch_updates["net_profit_usd"] = net_profit
+            update_fields(f"W#{watch_id}", "META", watch_updates)
 
         allocations.append({
             "watch_id": watch_id,

@@ -7,6 +7,7 @@ from constants import (
     VALID_STATUSES, STATUS_LABELS, ACTIVE_STATUSES,
     PHOTO_SLOTS, CASE_MATERIALS, CRYSTAL_TYPES, BRACELET_MATERIALS,
     COST_CATEGORIES, SALE_PLATFORMS, BRANDS, CALIBER_HINTS,
+    SHIPPING_LABEL_SOURCES, SHIPPING_LABEL_SOURCE_LABELS,
 )
 from logger import log
 
@@ -268,15 +269,16 @@ st.markdown(
     f"&nbsp;&nbsp;<span style='font-size:0.85em;color:gray'>{watch.get('reference','')}{personal_badge}</span>",
     unsafe_allow_html=True,
 )
-st.caption(f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  Landed: **${watch.get('total_landed_cost_usd') or 0:,.2f}**")
+header_cost_basis = watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd") or 0
+st.caption(f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  Cost: **${header_cost_basis:,.2f}**")
 
 st.divider()
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_overview, tab_edit, tab_transitions, tab_costs, tab_photos, tab_listing = st.tabs(
-    ["Overview", "Edit", "Transitions", "Costs", "Photos", "Listing"]
+tab_overview, tab_edit, tab_transitions, tab_costs, tab_photos, tab_listing, tab_admin = st.tabs(
+    ["Overview", "Edit", "Transitions", "Costs", "Photos", "Listing", "Admin"]
 )
 
 
@@ -318,6 +320,7 @@ with tab_overview:
         auction_jpy = watch.get("auction_price_jpy") or 0
         customs = watch.get("customs_duty_usd") or 0
         intl_ship = watch.get("intl_shipping_usd") or 0
+        presale = watch.get("total_presale_costs_usd") or 0
         additional = watch.get("total_additional_costs_usd") or 0
         labor_hrs = watch.get("total_labor_hours") or 0
 
@@ -335,12 +338,17 @@ with tab_overview:
             ("Buyee Fees", f"~${buyee_usd:,.2f}" if buyee_usd else "—"),
             ("Customs Duty", f"${customs:,.2f}" if customs else "—"),
             ("Intl Shipping (alloc.)", f"${intl_ship:,.2f}" if intl_ship else "—"),
-            ("Additional Costs", f"${additional:,.2f}" if additional else "—"),
+            ("Pre-sale Costs (parts/repair)", f"${presale:,.2f}" if presale else "—"),
+            ("Additional Costs (all, incl. pre-sale)", f"${additional:,.2f}" if additional else "—"),
             ("Labor", f"{labor_hrs:.2g} hrs"),
         ]
         cost_df = pd.DataFrame(rows, columns=["Item", "Amount"])
         st.dataframe(cost_df, hide_index=True, width='stretch')
-        st.metric("Total Landed", f"${watch.get('total_landed_cost_usd') or 0:,.2f}")
+
+        cost_basis = watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd") or 0
+        cbm1, cbm2 = st.columns(2)
+        cbm1.metric("Landed (acquisition only)", f"${watch.get('total_landed_cost_usd') or 0:,.2f}")
+        cbm2.metric("Cost Basis (landed + pre-sale)", f"${cost_basis:,.2f}")
 
         if watch.get("sale_price_usd"):
             st.divider()
@@ -348,7 +356,7 @@ with tab_overview:
             sc1, sc2 = st.columns(2)
             sc1.metric("Sale Price", f"${watch['sale_price_usd']:,.2f}")
             if net is not None:
-                sc2.metric("Net Profit", f"${net:,.2f}", delta=f"${net - (watch.get('total_landed_cost_usd') or 0):,.2f} vs landed")
+                sc2.metric("Net Profit", f"${net:,.2f}", delta=f"${net - cost_basis:,.2f} vs cost basis")
 
     if watch.get("notes"):
         st.divider()
@@ -659,6 +667,11 @@ with tab_transitions:
             close_shipping = cs4.number_input(
                 "Shipping Paid (USD)", value=6.0, min_value=0.0, step=0.50, format="%.2f",
             )
+            close_label_source = cs4.selectbox(
+                "Shipping Label Source",
+                SHIPPING_LABEL_SOURCES,
+                format_func=lambda s: SHIPPING_LABEL_SOURCE_LABELS.get(s, s),
+            )
             close_fees = cs5.number_input(
                 "Platform Fees (USD)",
                 value=0.0, min_value=0.0, step=0.50, format="%.2f",
@@ -692,6 +705,7 @@ with tab_transitions:
                         "sale_date":        str(close_sale_date),
                         "event_date":       str(close_sale_date),
                         "shipping_cost_usd": close_shipping,
+                        "shipping_label_source": close_label_source,
                         "hours_spent":      close_hours,
                         "notes":            close_notes,
                         "ad_spend_usd":     close_ad_spend,
@@ -781,6 +795,16 @@ with tab_transitions:
                 min_value=0.0, step=0.50, format="%.2f",
                 help="What you actually paid to ship to the buyer.",
             )
+            label_idx = (
+                SHIPPING_LABEL_SOURCES.index(watch["shipping_label_source"])
+                if watch.get("shipping_label_source") in SHIPPING_LABEL_SOURCES else 0
+            )
+            label_source = rs4.selectbox(
+                "Shipping Label Source",
+                SHIPPING_LABEL_SOURCES,
+                index=label_idx,
+                format_func=lambda s: SHIPPING_LABEL_SOURCE_LABELS.get(s, s),
+            )
             platform_fees = st.number_input(
                 "Platform Fees (USD)",
                 value=float(watch.get("platform_fees_usd") or 0),
@@ -797,6 +821,7 @@ with tab_transitions:
                     "sale_platform": sale_platform,
                     "sale_date": str(sale_date_val),
                     "shipping_cost_usd": shipping_out,
+                    "shipping_label_source": label_source,
                     "platform_fees_usd": platform_fees or None,
                 }
                 sale_updates = {k: v for k, v in sale_updates.items() if v is not None}
@@ -1002,7 +1027,12 @@ with tab_listing:
     pricing   = report.get("pricing", {})
     breakdown = pricing.get("breakdown", {})
 
-    landed     = breakdown.get("total_landed_cost", watch.get("total_landed_cost_usd") or 0)
+    # cost_basis (landed + pre-sale bench costs) drives the ROI targets in pricing.py —
+    # use the same figure here so the what-if calculator matches the backend numbers.
+    landed     = breakdown.get(
+        "total_cost_basis",
+        watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd") or 0,
+    )
     labor_cost = breakdown.get("labor_cost", 0)
     labor_hrs  = watch.get("total_labor_hours") or 0
 
@@ -1125,3 +1155,97 @@ with tab_listing:
     # ── Description ───────────────────────────────────────────────────────────
     st.subheader("Description")
     st.code(report.get("description", ""), language=None)
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+# Every field already has a home in Edit/Transitions/Costs/Photos — this tab is for
+# (1) a one-glance audit of the derived/computed fields for reconciling against eBay, and
+# (2) a raw patch escape hatch for anything the specific forms don't cover well, instead of
+# hand-editing DynamoDB.
+
+_ADMIN_PATCH_FIELDS = [
+    "sale_price_usd", "platform_fees_usd", "shipping_cost_usd", "shipping_label_source",
+    "sale_platform", "sale_date", "auction_price_jpy", "auction_price_usd",
+    "customs_duty_usd", "buyee_platform_jpy", "buyee_inspection_jpy",
+    "domestic_shipping_jpy", "intl_shipping_usd", "shipment_id", "total_labor_hours",
+    "thumbnail_key", "notes",
+]
+_ADMIN_NUMERIC_FIELDS = {
+    "sale_price_usd", "platform_fees_usd", "shipping_cost_usd", "auction_price_jpy",
+    "auction_price_usd", "customs_duty_usd", "buyee_platform_jpy", "buyee_inspection_jpy",
+    "domestic_shipping_jpy", "intl_shipping_usd", "total_labor_hours",
+}
+
+with tab_admin:
+    st.subheader("Cost Breakdown Audit")
+    st.caption(
+        "Every derived cost field in one place, for checking against real eBay/Buyee "
+        "numbers during reconciliation. These aren't directly editable — fix the inputs "
+        "(Edit tab, Costs tab, or the patch field below) and they recompute automatically."
+    )
+
+    audit_rows = [
+        ("Landed (acquisition only)", watch.get("total_landed_cost_usd")),
+        ("Pre-sale Costs (parts/repair)", watch.get("total_presale_costs_usd")),
+        ("Cost Basis (landed + pre-sale)", watch.get("total_cost_basis_usd")),
+        ("Additional Costs (all ADDCOST, any category)", watch.get("total_additional_costs_usd")),
+        ("Sale Price", watch.get("sale_price_usd")),
+        ("Platform Fees", watch.get("platform_fees_usd")),
+        ("Shipping Cost", watch.get("shipping_cost_usd")),
+        ("Net Profit", watch.get("net_profit_usd")),
+    ]
+    audit_df = pd.DataFrame(
+        [(label, f"${v:,.2f}" if v is not None else "—") for label, v in audit_rows],
+        columns=["Field", "Value"],
+    )
+    st.dataframe(audit_df, hide_index=True, width="stretch")
+
+    label_src = watch.get("shipping_label_source") or "—"
+    st.caption(
+        f"Shipping label source: **{SHIPPING_LABEL_SOURCE_LABELS.get(label_src, label_src)}**"
+    )
+
+    st.divider()
+    st.subheader("Quick Patch")
+    st.caption(
+        "Set any single field directly via the API — for corrections the other tabs don't "
+        "cover well. Numeric-looking values are cast to numbers, true/false to booleans, "
+        "everything else stored as text."
+    )
+    with st.form("admin_patch"):
+        pf1, pf2 = st.columns([1, 2])
+        patch_field = pf1.selectbox("Field", _ADMIN_PATCH_FIELDS)
+        current_val = watch.get(patch_field)
+        patch_value = pf2.text_input(
+            "New value", value="" if current_val is None else str(current_val),
+            help=f"Current value: {current_val!r}",
+        )
+        if st.form_submit_button("Patch field", type="primary"):
+            val = patch_value.strip()
+            if val.lower() in ("true", "false"):
+                parsed = val.lower() == "true"
+            else:
+                try:
+                    parsed = float(val) if val else None
+                    if parsed is not None and parsed.is_integer():
+                        parsed = int(parsed)
+                except ValueError:
+                    parsed = val
+
+            if patch_field in _ADMIN_NUMERIC_FIELDS and not isinstance(parsed, (int, float, type(None))):
+                st.error(
+                    f"'{patch_field}' is a numeric field — '{patch_value}' isn't a number. "
+                    "Nothing was sent."
+                )
+            else:
+                try:
+                    api.update_watch(watch_id, {patch_field: parsed})
+                    st.cache_data.clear()
+                    st.success(f"Patched {patch_field} → {parsed!r}")
+                    log.info("admin patch %s.%s = %r", watch_id, patch_field, parsed)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Patch failed: {e}")
+
+    with st.expander("Raw record (read-only)", expanded=False):
+        st.json({k: v for k, v in watch.items() if k not in ("transitions", "additional_costs")})

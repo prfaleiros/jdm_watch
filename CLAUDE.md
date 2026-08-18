@@ -29,7 +29,7 @@ Don't push the LLC/sales-tax-permit angle; Paulo knows and is deliberately defer
 
 ## Pricing model (as of 2026-08)
 
-Profit target per tier = `max(landed_cost × roi_pct, min_profit_usd)`.
+Profit target per tier = `max(cost_basis × roi_pct, min_profit_usd)`.
 
 - ROI targets: Fast 20%, Standard 33%, Patient 50% (`target_roi_pct_*` in config.json)
 - Minimum profit floor: **$50** after all costs (`min_profit_usd`) — protects cheap pieces
@@ -43,6 +43,42 @@ Profit target per tier = `max(landed_cost × roi_pct, min_profit_usd)`.
   flat $40 rate via UPS Worldwide Expedited with limited destinations.
 - Full fee/config schema lives in `config/config.json` — read it directly rather than
   trusting a stale summary.
+
+## Cost model (as of 2026-08-18)
+
+Three distinct buckets, split out for reconciling against real eBay/Buyee numbers — see
+`lambdas/shared/python/costs.py` for the single source of truth (used by every handler that
+touches these fields; don't reintroduce a local copy):
+
+- **`total_landed_cost_usd`** — pure acquisition only: auction price + customs + intl
+  shipping + Buyee fees (JPY→USD). Does NOT include any `ADDCOST` amounts.
+- **`total_presale_costs_usd`** — sum of `ADDCOST` records categorized `part`/`consumable`/
+  `tool` (bench/repair costs). `PRESALE_CATEGORIES` in `costs.py`. `shipping`/`advertising`/
+  `other` categories are deliberately NOT auto-classified as pre-sale — timing is ambiguous,
+  so they're left out unless corrected via the Watch page's Admin tab.
+- **`total_cost_basis_usd`** — `landed + presale`, i.e. true all-in cost before a sale. This
+  is what the pricing engine, Financials' "Capital Deployed", and the main inventory grid's
+  "Landed ($)" column all actually use now (with a fallback to bare landed for pre-split
+  records) — don't reintroduce bare `total_landed_cost_usd` as a display figure without
+  checking whether cost_basis is what's actually wanted.
+- `total_additional_costs_usd` — unchanged, still sum of *all* `ADDCOST` regardless of
+  category. `net_profit_usd`'s formula is unchanged in substance (still subtracts landed +
+  all-additional-costs once total); only the breakdown changed, not the bottom line — verified
+  against all 24 real sold watches during the migration (totals matched exactly, $981.72).
+- **`shipping_label_source`** (`"platform"` / `"external"`) — whether the shipping label came
+  from the sales platform or an outside source (e.g. stamps.com). Captured alongside
+  `shipping_cost_usd` at sale-close time or via Admin tab patch.
+- **Ad campaigns** (`lambdas/campaigns/`) — a shared ad cost covering multiple watches at
+  once (eBay Offsite Ads, Reddit promotion), modeled on the existing `Shipment` pattern but
+  split **evenly** across linked watches rather than weighted by value. Allocating creates one
+  `ADDCOST(category="advertising")` per watch via the existing `additional_cost_item()` — no
+  new profit-calc path. UI: `streamlit_app/pages/10_Ad_Campaigns.py`.
+- **Migration**: `scripts/migrate_cost_split.py` (dry-run by default, `--apply` to write) was
+  run once against all 51 existing watches to backfill landed/presale/cost_basis. Deterministic
+  reclassification only — no watch had an ambiguous `shipping`/`other` cost to flag for review.
+- **Admin tab** (`2_Watch.py`, 7th tab) — a raw cost-field audit table + a generic "Quick
+  Patch" (any `EDITABLE_FIELDS` value via the existing `PATCH /watches/{id}`) + a read-only
+  full JSON dump. Built so Paulo stops hand-editing DynamoDB during reconciliation.
 
 ## Streamlit pages
 
@@ -88,6 +124,18 @@ to any new dropdown from the start.
   key, the value is lost on the next rerun (e.g. when a separate submit button is clicked).
   This bit both `2_Watch.py`'s pitch text area (pre-existing, unfixed) and an early version of
   `9_Financials.py`'s "Ask Your Data" box (fixed).
+- **`costs.py`'s recalc functions (`recalc_landed`, `recalc_profit`, etc.) must stay
+  defensive** (`_safe_float` fallback to 0 instead of raising) — they now run on *every*
+  `watches/update` PATCH, not just sale-related ones, because the Admin tab's Quick Patch can
+  put arbitrary text into any `EDITABLE_FIELDS` value. An unguarded `float()` on a bad value
+  (e.g. a string in `sale_price_usd`) would 502 on that watch's every future edit, including
+  the corrective one — a self-locking bug, caught during testing before it hit real data. If
+  you add a new recalc path, coerce through `_safe_float`, don't add a bare `float()`.
+- Streamlit's fancy `st.selectbox`/`st.multiselect` (BaseWeb components, not native
+  `<select>`) don't reliably respond to browser-automation `form_input` calls the way a plain
+  `<select>` would — a selectbox set this way can silently keep its prior value while a
+  submit button click still fires. Prefer opening the dropdown and clicking the option, or
+  verify via a follow-up read rather than trusting the "filled" confirmation alone.
 
 ## Deferred / open TODOs
 

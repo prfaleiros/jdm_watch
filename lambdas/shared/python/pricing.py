@@ -27,11 +27,16 @@ def _roi_targets(cfg: dict) -> dict:
 def forward_price(watch: dict, cfg: dict) -> dict:
     """Given a watch with known costs, calculate sale price targets per tier.
 
-    Profit target = max(landed × roi_pct, min_profit_floor)
+    Profit target = max(cost_basis × roi_pct, min_profit_floor)
     This ensures the target scales with capital at risk while protecting
     small purchases from being priced below minimum viable margin.
+
+    cost_basis = landed (acquisition) + pre-sale bench costs (parts/repairs) — see
+    lambdas/shared/python/costs.py. Falls back to bare landed for watches predating the
+    cost-basis split (total_cost_basis_usd not yet populated).
     """
     landed      = _d(watch.get("total_landed_cost_usd", 0))
+    cost_basis  = _d(watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd", 0))
     labor_hours = _d(watch.get("total_labor_hours", 0))
     labor_rate  = _d(cfg.get("labor_rate", "1"))
     labor_cost  = labor_hours * labor_rate
@@ -43,12 +48,12 @@ def forward_price(watch: dict, cfg: dict) -> dict:
     pp_flat  = _d(cfg.get("paypal_flat", "0.30"))
     roi_map  = _roi_targets(cfg)
 
-    base_cost = landed + labor_cost + shipping
+    base_cost = cost_basis + labor_cost + shipping
 
     results = {}
     for label, roi in roi_map.items():
         # Scale profit with capital; floor prevents unprofitable small sales
-        target = max(landed * roi, min_profit)
+        target = max(cost_basis * roi, min_profit)
 
         ebay_price   = (base_cost + target) / (Decimal("1") - ebay_eff)
         reddit_price = (base_cost + target + pp_flat) / (Decimal("1") - pp_rate)
@@ -62,6 +67,7 @@ def forward_price(watch: dict, cfg: dict) -> dict:
 
     results["breakdown"] = {
         "total_landed_cost":  float(landed),
+        "total_cost_basis":   float(cost_basis),
         "labor_cost":         float(labor_cost),
         "shipping_to_buyer":  float(shipping),
         "ebay_effective_rate":float(ebay_eff.quantize(Decimal("0.00001"))),

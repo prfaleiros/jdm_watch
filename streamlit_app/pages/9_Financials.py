@@ -34,13 +34,20 @@ if df.empty:
 biz = df[df.get("is_personal", False) != True].copy()
 
 NUMERIC_COLS = [
-    "total_landed_cost_usd", "sale_price_usd", "net_profit_usd",
+    "total_landed_cost_usd", "total_cost_basis_usd", "sale_price_usd", "net_profit_usd",
     "shipping_cost_usd", "platform_fees_usd", "total_additional_costs_usd",
     "total_labor_hours",
 ]
 for col in NUMERIC_COLS:
     if col in biz.columns:
         biz[col] = pd.to_numeric(biz[col], errors="coerce")
+
+# "Capital tied up" should reflect true all-in cost (acquisition + pre-sale bench costs),
+# not just acquisition. Falls back to landed for watches predating the cost-basis split.
+if "total_cost_basis_usd" in biz.columns:
+    biz["cost_basis"] = biz["total_cost_basis_usd"].fillna(biz.get("total_landed_cost_usd"))
+else:
+    biz["cost_basis"] = biz.get("total_landed_cost_usd")
 
 # ── Section 1: Capital Deployed ────────────────────────────────────────────────
 st.header("Capital Deployed")
@@ -49,16 +56,16 @@ active = biz[biz["current_status"].isin(ACTIVE_STATUSES)]
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Pieces in inventory", len(active))
-c2.metric("Capital tied up", f"${active['total_landed_cost_usd'].sum():,.2f}")
+c2.metric("Capital tied up", f"${active['cost_basis'].sum():,.2f}")
 c3.metric(
     "Avg cost / piece",
-    f"${active['total_landed_cost_usd'].mean():,.2f}" if len(active) else "$0.00",
+    f"${active['cost_basis'].mean():,.2f}" if len(active) else "$0.00",
 )
 
 if not active.empty:
     by_status = (
         active.groupby("current_status")
-        .agg(Pieces=("watch_id", "count"), Capital=("total_landed_cost_usd", "sum"))
+        .agg(Pieces=("watch_id", "count"), Capital=("cost_basis", "sum"))
         .reset_index()
     )
     by_status["Status"] = by_status["current_status"].map(STATUS_LABELS).fillna(by_status["current_status"])
@@ -77,11 +84,11 @@ if not active.empty:
     if not aging.empty:
         st.caption("Oldest pieces still in inventory")
         st.dataframe(
-            aging[["reference", "brand", "collection", "current_status", "days_in_system", "total_landed_cost_usd"]]
+            aging[["reference", "brand", "collection", "current_status", "days_in_system", "cost_basis"]]
             .rename(columns={
                 "current_status": "Status",
                 "days_in_system": "Days",
-                "total_landed_cost_usd": "Landed ($)",
+                "cost_basis": "Cost ($)",
             }),
             width="stretch",
             hide_index=True,
@@ -215,9 +222,10 @@ if st.button("Analyze", type="primary", disabled=not question.strip()):
     with st.spinner("Analyzing…"):
         ai_cols = [c for c in [
             "watch_id", "brand", "collection", "reference", "jdm_model", "case_material", "movement_type",
-            "current_status", "created_at", "total_landed_cost_usd", "total_labor_hours",
-            "sale_price_usd", "sale_platform", "sale_date", "shipping_cost_usd", "platform_fees_usd",
-            "net_profit_usd",
+            "current_status", "created_at", "total_landed_cost_usd", "total_presale_costs_usd",
+            "cost_basis", "total_additional_costs_usd", "total_labor_hours",
+            "sale_price_usd", "sale_platform", "sale_date", "shipping_cost_usd",
+            "shipping_label_source", "platform_fees_usd", "net_profit_usd",
         ] if c in biz.columns]
         data_csv = biz[ai_cols].to_csv(index=False)
 

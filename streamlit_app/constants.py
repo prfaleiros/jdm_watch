@@ -44,6 +44,23 @@ BRACELET_MATERIALS = ["", "Titanium", "Stainless Steel", "Resin", "Leather", "NA
 
 COST_CATEGORIES = ["part", "consumable", "tool", "shipping", "advertising", "other"]
 
+# Categories treated as pre-sale (bench/repair) cost basis vs. everything else — must match
+# PRESALE_CATEGORIES in lambdas/shared/python/costs.py.
+PRESALE_COST_CATEGORIES = {"part", "consumable", "tool"}
+
+SHIPPING_LABEL_SOURCES = ["platform", "external"]
+SHIPPING_LABEL_SOURCE_LABELS = {
+    "platform": "Platform-provided label",
+    "external": "External (e.g. stamps.com)",
+}
+
+AD_CAMPAIGN_PLATFORMS = ["ebay_offsite", "reddit", "other"]
+AD_CAMPAIGN_PLATFORM_LABELS = {
+    "ebay_offsite": "eBay Offsite Ads",
+    "reddit": "Reddit promotion",
+    "other": "Other",
+}
+
 # Best-effort collection -> market tier, used to group sold pieces in Financials.
 # Deliberately NOT price-derived — a restored/flipped piece's sale price doesn't reflect
 # where the collection actually sits in the lineup. Paulo-confirmed: Seiko 5/Spirit/Selection

@@ -56,6 +56,7 @@ def handler(event, context):
                 "jdm_model": item.get("jdm_model"),
                 "current_status": item.get("current_status"),
                 "total_landed_cost_usd": item.get("total_landed_cost_usd"),
+                "total_cost_basis_usd": item.get("total_cost_basis_usd"),
                 "is_personal": item.get("is_personal"),
                 "thumbnail_key": thumb_key,
                 "thumbnail_url": thumb_url,

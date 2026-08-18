@@ -1,24 +1,8 @@
 import json
 from models import stage_transition_item, additional_cost_item, now_iso
-from db import get_item, put_item, update_fields, api_response
+from db import get_item, put_item, query_pk, update_fields, api_response
 from config import load_config
-
-
-def _recalc_landed(watch: dict, ad_delta: float) -> float:
-    auction = float(watch.get("auction_price_usd") or 0)
-    customs = float(watch.get("customs_duty_usd") or 0)
-    intl = float(watch.get("intl_shipping_usd") or 0)
-    existing_additional = float(watch.get("total_additional_costs_usd") or 0)
-    buyee_jpy = (
-        float(watch.get("buyee_platform_jpy") or 0)
-        + float(watch.get("buyee_inspection_jpy") or 0)
-        + float(watch.get("domestic_shipping_jpy") or 0)
-    )
-    jpy_rate = 0
-    if watch.get("auction_price_jpy") and watch.get("auction_price_usd"):
-        jpy_rate = float(watch["auction_price_usd"]) / float(watch["auction_price_jpy"])
-    buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
-    return round(auction + customs + intl + buyee_usd + existing_additional + ad_delta, 2)
+from costs import recalc_landed, split_addcost_totals, total_cost_basis, recalc_profit
 
 
 def handler(event, context):
@@ -40,6 +24,7 @@ def handler(event, context):
     sale_date      = body.get("sale_date", now_iso()[:10])
     event_date     = body.get("event_date", sale_date)
     shipping_cost  = float(body.get("shipping_cost_usd", cfg.get("shipping_to_buyer", "6")))
+    shipping_label_source = body.get("shipping_label_source", "platform")
     hours_spent    = float(body.get("hours_spent", 0))
     notes          = body.get("notes", "")
     ad_spend       = float(body.get("ad_spend_usd", 0))
@@ -49,15 +34,13 @@ def handler(event, context):
     # which is unknown until the transaction settles. No point estimating.
     platform_fees = float(body.get("platform_fees_usd", 0))
 
-    # ── Step 1: Record ad spend as ADDCOST ───────────────────────────────────
-    ad_delta = 0.0
+    # ── Step 1: Record ad spend as ADDCOST (post-sale expense, not pre-sale) ──────
     if ad_spend > 0:
         put_item(additional_cost_item(watch_id, {
             "amount_usd": ad_spend,
             "category": "advertising",
             "notes": ad_notes,
         }))
-        ad_delta = ad_spend
 
     # ── Step 2: Log stage transition ─────────────────────────────────────────
     from_status = watch.get("current_status", "listed")
@@ -71,13 +54,21 @@ def handler(event, context):
 
     # ── Step 3: Recalculate and update META ───────────────────────────────────
     new_labor_hours = float(watch.get("total_labor_hours") or 0) + hours_spent
-    new_additional  = float(watch.get("total_additional_costs_usd") or 0) + ad_delta
-    new_landed      = _recalc_landed(watch, ad_delta)
-    labor_rate      = float(cfg.get("labor_rate", "1"))
-    net_profit      = round(
-        sale_price - platform_fees - shipping_cost - new_landed - (new_labor_hours * labor_rate),
-        2,
-    )
+    all_costs = query_pk(f"W#{watch_id}", "ADDCOST#")
+    presale, additional = split_addcost_totals(all_costs)
+    new_landed = recalc_landed(watch)
+    cost_basis = total_cost_basis(new_landed, presale)
+
+    merged = {
+        **watch,
+        "sale_price_usd": sale_price,
+        "platform_fees_usd": platform_fees,
+        "shipping_cost_usd": shipping_cost,
+        "total_landed_cost_usd": new_landed,
+        "total_additional_costs_usd": additional,
+        "total_labor_hours": new_labor_hours,
+    }
+    net_profit = recalc_profit(merged, cfg)
 
     update_fields(f"W#{watch_id}", "META", {
         "current_status":              "sold",
@@ -87,10 +78,13 @@ def handler(event, context):
         "sale_platform":               sale_platform,
         "sale_date":                   sale_date,
         "shipping_cost_usd":           shipping_cost,
+        "shipping_label_source":       shipping_label_source,
         "platform_fees_usd":           platform_fees,
         "total_labor_hours":           new_labor_hours,
-        "total_additional_costs_usd":  new_additional,
+        "total_additional_costs_usd":  additional,
+        "total_presale_costs_usd":     presale,
         "total_landed_cost_usd":       new_landed,
+        "total_cost_basis_usd":        cost_basis,
         "net_profit_usd":              net_profit,
         "updated_at":                  now_iso(),
     })
@@ -102,6 +96,7 @@ def handler(event, context):
         "platform_fees_usd":     platform_fees,
         "shipping_cost_usd":     shipping_cost,
         "total_landed_cost_usd": new_landed,
+        "total_cost_basis_usd":  cost_basis,
         "net_profit_usd":        net_profit,
         "message":               "Sale closed.",
     })

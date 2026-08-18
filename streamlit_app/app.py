@@ -46,6 +46,12 @@ if not watches:
 df = pd.DataFrame(watches)
 df["is_personal"] = df["is_personal"].fillna(False)
 df["total_landed_cost_usd"] = pd.to_numeric(df["total_landed_cost_usd"], errors="coerce").fillna(0)
+# "Landed" in this grid means true all-in cost (acquisition + pre-sale bench costs) — falls
+# back to pure landed for watches predating the cost-basis split (see costs.py).
+if "total_cost_basis_usd" in df.columns:
+    df["total_landed_cost_usd"] = pd.to_numeric(
+        df["total_cost_basis_usd"], errors="coerce"
+    ).fillna(df["total_landed_cost_usd"])
 df["status_order"] = df["current_status"].map(STATUS_ORDER).fillna(99)
 
 # --- Stats ---

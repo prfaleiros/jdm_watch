@@ -83,6 +83,8 @@ class WatchBusinessStack(Stack):
         cost_delete      = make_fn("CostDelete",      "costs/delete")
         shipment_create  = make_fn("ShipmentCreate",  "shipments/create")
         shipment_allocate= make_fn("ShipmentAllocate","shipments/allocate")
+        campaign_create  = make_fn("CampaignCreate",  "campaigns/create")
+        campaign_allocate= make_fn("CampaignAllocate","campaigns/allocate")
         pricing_forward  = make_fn("PricingForward",  "pricing/forward")
         pricing_backward = make_fn("PricingBackward", "pricing/backward")
         report_listing   = make_fn("ReportListing",   "reports/listing")
@@ -133,6 +135,10 @@ class WatchBusinessStack(Stack):
         shipments = api.root.add_resource("shipments")
         shipments.add_method("POST", apigw.LambdaIntegration(shipment_create), api_key_required=ak)
         shipments.add_resource("{id}").add_resource("allocate").add_method("POST", apigw.LambdaIntegration(shipment_allocate), api_key_required=ak)
+
+        campaigns = api.root.add_resource("campaigns")
+        campaigns.add_method("POST", apigw.LambdaIntegration(campaign_create), api_key_required=ak)
+        campaigns.add_resource("{id}").add_resource("allocate").add_method("POST", apigw.LambdaIntegration(campaign_allocate), api_key_required=ak)
 
         pricing_root = api.root.add_resource("pricing")
         pricing_root.add_resource("max-bid").add_method("POST", apigw.LambdaIntegration(pricing_backward), api_key_required=ak)
