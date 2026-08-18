@@ -55,6 +55,11 @@ def watch_item(data: dict) -> dict:
         "buyee_platform_jpy": data.get("buyee_platform_jpy", 500),
         "buyee_inspection_jpy": data.get("buyee_inspection_jpy", 500),
         "domestic_shipping_jpy": data.get("domestic_shipping_jpy", 900),
+        # Actual USD charged for the above (platform+inspection+domestic shipping combined),
+        # from the real card statement/invoice. When set, this is used directly instead of
+        # deriving a rate from the auction price — Buyee fees are often charged in a separate
+        # transaction at a different FX rate than the auction win itself.
+        "buyee_fees_usd": data.get("buyee_fees_usd"),
         "customs_duty_usd": data.get("customs_duty_usd"),
         "shipment_id": data.get("shipment_id"),
         # allocated (set by shipment allocation)

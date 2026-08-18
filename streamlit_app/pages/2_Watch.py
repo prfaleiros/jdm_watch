@@ -324,18 +324,29 @@ with tab_overview:
         additional = watch.get("total_additional_costs_usd") or 0
         labor_hrs = watch.get("total_labor_hours") or 0
 
-        jpy_rate = auction_usd / auction_jpy if auction_jpy else 0
-        buyee_jpy = (
-            (watch.get("buyee_platform_jpy") or 0)
-            + (watch.get("buyee_inspection_jpy") or 0)
-            + (watch.get("domestic_shipping_jpy") or 0)
-        )
-        buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
+        # Prefer the real card-charge amount over an estimate derived from the auction's own
+        # rate — Buyee fees are often charged separately, at a different FX rate, and that
+        # rate genuinely drifts over time (this business has seen ~150 to ~155 JPY/USD).
+        buyee_fees_actual = watch.get("buyee_fees_usd")
+        if buyee_fees_actual is not None:
+            buyee_usd = float(buyee_fees_actual)
+            buyee_is_estimate = False
+        else:
+            jpy_rate = auction_usd / auction_jpy if auction_jpy else 0
+            buyee_jpy = (
+                (watch.get("buyee_platform_jpy") or 0)
+                + (watch.get("buyee_inspection_jpy") or 0)
+                + (watch.get("domestic_shipping_jpy") or 0)
+            )
+            buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0
+            buyee_is_estimate = True
+
+        buyee_label = f"~${buyee_usd:,.2f} (estimated)" if buyee_is_estimate else f"${buyee_usd:,.2f}"
 
         rows = [
             ("Auction (JPY)", f"¥{auction_jpy:,.0f}" if auction_jpy else "—"),
             ("Auction (USD)", f"${auction_usd:,.2f}" if auction_usd else "—"),
-            ("Buyee Fees", f"~${buyee_usd:,.2f}" if buyee_usd else "—"),
+            ("Buyee Fees", buyee_label if buyee_usd else "—"),
             ("Customs Duty", f"${customs:,.2f}" if customs else "—"),
             ("Intl Shipping (alloc.)", f"${intl_ship:,.2f}" if intl_ship else "—"),
             ("Pre-sale Costs (parts/repair)", f"${presale:,.2f}" if presale else "—"),
@@ -549,6 +560,14 @@ with tab_edit:
         b_inspection = pc5.number_input("Buyee Service JPY",  value=float(watch.get("buyee_inspection_jpy") or 500), step=100.0)
         b_domestic   = pc6.number_input("Domestic Ship JPY",  value=float(watch.get("domestic_shipping_jpy") or 900), step=100.0)
 
+        buyee_fees_usd = st.number_input(
+            "Buyee Fees USD (actual card charge)",
+            value=float(watch.get("buyee_fees_usd") or 0), min_value=0.0, step=0.01, format="%.2f",
+            help="From the real Buyee invoice/card statement. Leave 0 to fall back to "
+                 "estimating via the auction's own JPY/USD rate — Buyee fees are often "
+                 "charged separately, at a different rate, so this can drift.",
+        )
+
         pc7, pc8 = st.columns(2)
         intl_ship    = pc7.number_input("Intl Shipping USD (alloc.)", value=float(watch.get("intl_shipping_usd") or 0), step=0.01, format="%.2f")
         shipment_id  = pc8.text_input("Shipment ID", value=watch.get("shipment_id",""))
@@ -583,7 +602,7 @@ with tab_edit:
                 "auction_price_jpy": auction_jpy or None, "auction_price_usd": auction_usd or None,
                 "customs_duty_usd": customs_usd or None,
                 "buyee_platform_jpy": b_platform, "buyee_inspection_jpy": b_inspection,
-                "domestic_shipping_jpy": b_domestic,
+                "domestic_shipping_jpy": b_domestic, "buyee_fees_usd": buyee_fees_usd or None,
                 "intl_shipping_usd": intl_ship or None, "shipment_id": shipment_id or None,
                 "total_labor_hours": labor_hrs, "notes": notes,
                 "is_personal": is_personal,
@@ -1167,13 +1186,13 @@ _ADMIN_PATCH_FIELDS = [
     "sale_price_usd", "platform_fees_usd", "shipping_cost_usd", "shipping_label_source",
     "sale_platform", "sale_date", "auction_price_jpy", "auction_price_usd",
     "customs_duty_usd", "buyee_platform_jpy", "buyee_inspection_jpy",
-    "domestic_shipping_jpy", "intl_shipping_usd", "shipment_id", "total_labor_hours",
-    "thumbnail_key", "notes",
+    "domestic_shipping_jpy", "buyee_fees_usd", "intl_shipping_usd", "shipment_id",
+    "total_labor_hours", "thumbnail_key", "notes",
 ]
 _ADMIN_NUMERIC_FIELDS = {
     "sale_price_usd", "platform_fees_usd", "shipping_cost_usd", "auction_price_jpy",
     "auction_price_usd", "customs_duty_usd", "buyee_platform_jpy", "buyee_inspection_jpy",
-    "domestic_shipping_jpy", "intl_shipping_usd", "total_labor_hours",
+    "domestic_shipping_jpy", "buyee_fees_usd", "intl_shipping_usd", "total_labor_hours",
 }
 
 with tab_admin:

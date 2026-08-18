@@ -11,7 +11,7 @@ EDITABLE_FIELDS = {
     "diameter_mm", "lug_to_lug_mm", "thickness_mm", "lug_width_mm",
     "case_material", "solar", "radio_sync", "color",
     "auction_price_jpy", "auction_price_usd",
-    "buyee_platform_jpy", "buyee_inspection_jpy", "domestic_shipping_jpy",
+    "buyee_platform_jpy", "buyee_inspection_jpy", "domestic_shipping_jpy", "buyee_fees_usd",
     "customs_duty_usd", "shipment_id", "intl_shipping_usd",
     "sale_price_usd", "sale_platform", "sale_date",
     "shipping_cost_usd", "shipping_label_source", "platform_fees_usd",

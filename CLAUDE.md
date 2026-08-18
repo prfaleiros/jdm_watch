@@ -51,7 +51,15 @@ Three distinct buckets, split out for reconciling against real eBay/Buyee number
 touches these fields; don't reintroduce a local copy):
 
 - **`total_landed_cost_usd`** — pure acquisition only: auction price + customs + intl
-  shipping + Buyee fees (JPY→USD). Does NOT include any `ADDCOST` amounts.
+  shipping + Buyee fees. Does NOT include any `ADDCOST` amounts.
+- **`buyee_fees_usd`** (as of 2026-08-19) — the *actual* USD card charge for Buyee
+  platform+inspection+domestic-shipping fees combined, when known. Prefer this over deriving
+  it from the auction's own JPY/USD rate (`costs.buyee_fees_usd()` handles the fallback) —
+  Buyee fees are often charged in a separate transaction from the auction win, at a different
+  FX rate, and that rate genuinely drifts (this business has seen ~150 to ~155 JPY/USD over
+  time). Records without it show an estimated `~$X.XX` in the Watch page's Cost Breakdown;
+  records with it show the real `$X.XX`. No migration was run to backfill old records — there
+  was no better historical source to pull it from, so old records just keep the estimate.
 - **`total_presale_costs_usd`** — sum of `ADDCOST` records categorized `part`/`consumable`/
   `tool` (bench/repair costs). `PRESALE_CATEGORIES` in `costs.py`. `shipping`/`advertising`/
   `other` categories are deliberately NOT auto-classified as pre-sale — timing is ambiguous,

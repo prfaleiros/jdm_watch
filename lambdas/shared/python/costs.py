@@ -21,8 +21,33 @@ def _safe_float(val, default: float = 0.0) -> float:
         return default
 
 
+def buyee_fees_usd(watch: dict) -> float:
+    """USD cost of Buyee platform+inspection+domestic-shipping fees (combined, matching how
+    they're already summed on the JPY side).
+
+    Prefers the actual card-charge amount (`buyee_fees_usd`) when set — Buyee fees are often
+    charged in a separate transaction from the auction win, at whatever FX rate applied that
+    day, which can differ meaningfully from the auction's own rate (JPY/USD has genuinely
+    moved between ~150 and ~155 across this business's history). Falls back to estimating via
+    the auction's own rate only for older records that never captured the real figure.
+    """
+    explicit = watch.get("buyee_fees_usd")
+    if explicit is not None:
+        return round(_safe_float(explicit), 2)
+
+    buyee_jpy = (
+        _safe_float(watch.get("buyee_platform_jpy"))
+        + _safe_float(watch.get("buyee_inspection_jpy"))
+        + _safe_float(watch.get("domestic_shipping_jpy"))
+    )
+    auction = _safe_float(watch.get("auction_price_usd"))
+    auction_jpy = _safe_float(watch.get("auction_price_jpy"))
+    jpy_rate = auction / auction_jpy if auction_jpy and auction else 0.0
+    return round(buyee_jpy * jpy_rate, 2) if jpy_rate else 0.0
+
+
 def recalc_landed(watch: dict) -> float:
-    """Pure acquisition cost: auction + customs + intl shipping + Buyee fees (JPY->USD).
+    """Pure acquisition cost: auction + customs + intl shipping + Buyee fees (USD).
 
     Does NOT include any ADDCOST amounts (parts/repairs/ads) — those live in
     total_presale_costs_usd / total_additional_costs_usd instead. See total_cost_basis().
@@ -30,16 +55,7 @@ def recalc_landed(watch: dict) -> float:
     auction = _safe_float(watch.get("auction_price_usd"))
     customs = _safe_float(watch.get("customs_duty_usd"))
     intl = _safe_float(watch.get("intl_shipping_usd"))
-    buyee_jpy = (
-        _safe_float(watch.get("buyee_platform_jpy"))
-        + _safe_float(watch.get("buyee_inspection_jpy"))
-        + _safe_float(watch.get("domestic_shipping_jpy"))
-    )
-    jpy_rate = 0.0
-    auction_jpy = _safe_float(watch.get("auction_price_jpy"))
-    if auction_jpy and auction:
-        jpy_rate = auction / auction_jpy
-    buyee_usd = buyee_jpy * jpy_rate if jpy_rate else 0.0
+    buyee_usd = buyee_fees_usd(watch)
     return round(auction + customs + intl + buyee_usd, 2)
 
 

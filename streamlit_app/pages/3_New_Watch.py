@@ -50,6 +50,12 @@ with st.form("new_watch"):
     b_inspection = pc5.number_input("Buyee Service JPY",  value=500.0, step=100.0,
                                     help="300 JPY for purchases before April 1 2026, 500 JPY after.")
     b_domestic   = pc6.number_input("Domestic Ship JPY",  value=900.0, step=100.0)
+    buyee_fees_usd = st.number_input(
+        "Buyee Fees USD (actual card charge)", min_value=0.0, step=0.01, format="%.2f",
+        help="From the real Buyee invoice/card statement. Leave 0 if unknown yet — landed "
+             "cost will estimate it using the auction's own JPY/USD rate, which can be off "
+             "since Buyee fees are often charged separately at a different rate.",
+    )
 
     pc7, pc8 = st.columns(2)
     intl_ship   = pc7.number_input("Intl Shipping USD (alloc.)", min_value=0.0, step=0.01, format="%.2f",
@@ -89,7 +95,7 @@ if submitted:
         "auction_price_jpy": auction_jpy or None, "auction_price_usd": auction_usd or None,
         "customs_duty_usd": customs_usd or None,
         "buyee_platform_jpy": b_platform, "buyee_inspection_jpy": b_inspection,
-        "domestic_shipping_jpy": b_domestic,
+        "domestic_shipping_jpy": b_domestic, "buyee_fees_usd": buyee_fees_usd or None,
         "intl_shipping_usd": intl_ship or None,
         "shipment_id": shipment_id or None,
         "current_status": current_status,
