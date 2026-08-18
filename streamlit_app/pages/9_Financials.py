@@ -4,7 +4,11 @@ import pandas as pd
 import streamlit as st
 
 import api
-from constants import ACTIVE_STATUSES, STATUS_LABELS
+from constants import ACTIVE_STATUSES, COLLECTION_TIERS, STATUS_LABELS
+
+
+def _tier(collection) -> str:
+    return COLLECTION_TIERS.get(str(collection or "").strip().lower(), "Unclassified")
 
 st.set_page_config(page_title="Financials", layout="wide", page_icon="⌚")
 st.title("Financials")
@@ -132,8 +136,13 @@ st.header("Style Performance")
 if sold.empty:
     st.info("No closed sales yet to rank.")
 else:
-    group_choice = st.selectbox("Group by", ["Collection", "Case Material", "Movement Type", "Reference"])
+    sold["tier"] = sold["collection"].apply(_tier)
+
+    group_choice = st.selectbox(
+        "Group by", ["Tier", "Movement Type", "Case Material", "Collection", "Reference"],
+    )
     group_col = {
+        "Tier": "tier",
         "Collection": "collection",
         "Case Material": "case_material",
         "Movement Type": "movement_type",
@@ -145,8 +154,18 @@ else:
         - pd.to_datetime(sold["created_at"], utc=True, errors="coerce")
     ).dt.days
 
+    # Some older records never had every field written to DynamoDB at all (e.g.
+    # movement_type), which becomes NaN once loaded into a DataFrame — and pandas'
+    # groupby() silently drops NaN keys by default, making those sold pieces vanish
+    # from this table even though they're counted in the totals above. Bucket
+    # missing/blank values explicitly instead of letting them disappear.
+    group_key = sold[group_col].astype(str).str.strip()
+    group_key = group_key.fillna("(Unspecified)")
+    group_key = group_key.mask(group_key.isin(["", "nan", "None"]), "(Unspecified)")
+    sold["_group_key"] = group_key
+
     perf = (
-        sold.groupby(group_col)
+        sold.groupby("_group_key", dropna=False)
         .agg(
             Sold=("watch_id", "count"),
             Total_Profit=("net_profit_usd", "sum"),
@@ -162,7 +181,7 @@ else:
 
     st.dataframe(
         perf.rename(columns={
-            group_col: group_choice,
+            "_group_key": group_choice,
             "Total_Profit": "Total Profit ($)",
             "Avg_Profit": "Avg Profit ($)",
             "Avg_Days_to_Sell": "Avg Days to Sell",

@@ -44,6 +44,38 @@ BRACELET_MATERIALS = ["", "Titanium", "Stainless Steel", "Resin", "Leather", "NA
 
 COST_CATEGORIES = ["part", "consumable", "tool", "shipping", "advertising", "other"]
 
+# Best-effort collection -> market tier, used to group sold pieces in Financials.
+# Deliberately NOT price-derived — a restored/flipped piece's sale price doesn't reflect
+# where the collection actually sits in the lineup. Paulo-confirmed: Seiko 5/Spirit/Selection
+# = Entry, Brightz = Mid, Astron = Top. Everything else below is a best-effort guess based on
+# each collection's general market position — correct freely, this is meant to be edited.
+# Lookup is case-insensitive; unknown collections fall back to "Unclassified" rather than
+# being silently dropped or misclassified.
+COLLECTION_TIERS = {
+    # Entry — confirmed
+    "seiko 5": "Entry",
+    "5": "Entry",
+    "spirit": "Entry",
+    "selection": "Entry",
+    # Entry — best guess
+    "exceline": "Entry",
+    "lukia": "Entry",
+    "alba": "Entry",
+    "harmony": "Entry",
+    "xc": "Entry",
+    # Mid — confirmed
+    "brightz": "Mid",
+    # Mid — best guess
+    "5 sports": "Mid",
+    "dolce": "Mid",
+    "lord matic": "Mid",
+    "presage": "Mid",
+    "prospex": "Mid",
+    # Top — confirmed. Paulo: "the only one in the lineup that belongs there" — no other
+    # guessed top-tier entries; add one explicitly if that changes.
+    "astron": "Top",
+}
+
 SALE_PLATFORMS = ["ebay", "reddit", "direct", "other"]
 
 BRANDS = ["", "Seiko", "Citizen", "Casio", "Orient", "Other"]
