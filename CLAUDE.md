@@ -25,7 +25,11 @@ Don't push the LLC/sales-tax-permit angle; Paulo knows and is deliberately defer
   bucket (cached in Lambda memory — see Known Gotchas). `config/fees.csv` is legacy/dead —
   nothing reads it since 2026-05-13; don't resurrect it.
 - **Photos:** S3, presigned PUT for upload / GET for display (24h TTL). Any Lambda
-  generating presigned GET URLs needs `photos_bucket.grant_read(...)` in CDK.
+  generating presigned GET URLs needs `photos_bucket.grant_read(...)` in CDK. Both
+  `watches/list` and `watches/get` presign `thumbnail_url` from `thumbnail_key` — if a third
+  read path for a watch record gets added, remember it too (`watches/get` had no
+  `thumbnail_url` at all until 2026-08-19). `2_Watch.py` and `7_Offer_Analyzer.py`'s headers
+  render it inline via `st.image(watch["thumbnail_url"])` when present.
 
 ## Pricing model (as of 2026-08)
 

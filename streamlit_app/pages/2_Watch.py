@@ -264,13 +264,18 @@ costs = watch.get("additional_costs", [])
 # Header
 personal_badge = " 🔒 Personal" if watch.get("is_personal") else ""
 status_label = STATUS_LABELS.get(watch["current_status"], watch["current_status"])
-st.markdown(
-    f"## {watch.get('brand','')} {watch.get('collection','')} {watch.get('jdm_model','')}"
-    f"&nbsp;&nbsp;<span style='font-size:0.85em;color:gray'>{watch.get('reference','')}{personal_badge}</span>",
-    unsafe_allow_html=True,
-)
 header_cost_basis = watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd") or 0
-st.caption(f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  Cost: **${header_cost_basis:,.2f}**")
+
+hdr_img, hdr_text = st.columns([1, 6])
+if watch.get("thumbnail_url"):
+    hdr_img.image(watch["thumbnail_url"], width=90)
+with hdr_text:
+    st.markdown(
+        f"## {watch.get('brand','')} {watch.get('collection','')} {watch.get('jdm_model','')}"
+        f"&nbsp;&nbsp;<span style='font-size:0.85em;color:gray'>{watch.get('reference','')}{personal_badge}</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  Cost: **${header_cost_basis:,.2f}**")
 
 st.divider()
 

@@ -94,6 +94,7 @@ class WatchBusinessStack(Stack):
         photos_bucket.grant_read(photo_presign)
         photos_bucket.grant_read(report_listing)
         photos_bucket.grant_read(watch_list)   # presigned GET URLs for thumbnails
+        photos_bucket.grant_read(watch_get)    # presigned GET URL for thumbnail on Watch detail
 
         # --- API Gateway ---
         api = apigw.RestApi(self, "WatchApi",

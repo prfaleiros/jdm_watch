@@ -54,7 +54,13 @@ except Exception as e:
     st.stop()
 
 bd = pricing.get("breakdown", {})
-landed      = float(bd.get("total_landed_cost", watch.get("total_landed_cost_usd", 0)))
+# cost_basis (landed + pre-sale bench costs) is the true cost to weigh an offer against —
+# bare total_landed_cost is acquisition-only since the cost-model split and would understate
+# cost on any watch with parts/repair costs. Falls back for pre-split records.
+landed      = float(bd.get(
+    "total_cost_basis",
+    watch.get("total_cost_basis_usd") or watch.get("total_landed_cost_usd") or 0,
+))
 labor_cost  = float(bd.get("labor_cost", 0))
 base_ship   = float(bd.get("shipping_to_buyer", 6.0))
 ebay_eff    = float(bd.get("ebay_effective_rate", 0.215))
@@ -64,10 +70,15 @@ base_rate   = ebay_eff - ad_rate_pct / 100
 
 # ── Watch summary ──────────────────────────────────────────────────────────────
 name = f"{watch.get('brand', '')} {watch.get('collection', '')} {watch.get('reference', '')}".strip()
-st.subheader(name)
+
+hdr_img, hdr_text = st.columns([1, 6])
+if watch.get("thumbnail_url"):
+    hdr_img.image(watch["thumbnail_url"], width=90)
+with hdr_text:
+    st.subheader(name)
 
 mc1, mc2 = st.columns(2)
-mc1.metric("Landed Cost", f"${landed:,.2f}")
+mc1.metric("Cost Basis", f"${landed:,.2f}")
 mc2.metric("Labor", f"${labor_cost:,.2f}")
 
 # Pricing tiers as context
