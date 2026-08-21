@@ -135,6 +135,21 @@ def backward_max_bid(params: dict, cfg: dict) -> dict:
             "max_bid_jpy":      float(max_bid_jpy.quantize(Decimal("1"), ROUND_HALF_UP)),
         }
 
+    # Optional custom profit targets (e.g. {"min": 30, "max": 150} in USD) — lets the caller
+    # explore a self-chosen profit range instead of only the three fixed ROI tiers, which are
+    # dominated by min_profit_usd on cheap watches and can undersell what's actually viable.
+    custom_targets = params.get("custom_profit_targets") or {}
+    for label, target_usd in custom_targets.items():
+        target = _d(target_usd)
+        total_landed = available - target
+        max_auction_usd = (total_landed - buyee_fixed_usd - intl_alloc) / (Decimal("1") + customs)
+        max_bid_jpy = max_auction_usd * fx
+        results[f"custom_{label}"] = {
+            "profit_target":   float(target.quantize(Decimal("0.01"), ROUND_HALF_UP)),
+            "max_auction_usd": float(max_auction_usd.quantize(Decimal("0.01"), ROUND_HALF_UP)),
+            "max_bid_jpy":     float(max_bid_jpy.quantize(Decimal("1"), ROUND_HALF_UP)),
+        }
+
     results["breakdown"] = {
         "expected_sale_usd":   float(expected_sale),
         "ebay_effective_rate": float(ebay_eff.quantize(Decimal("0.00001"))),

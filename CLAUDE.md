@@ -96,12 +96,44 @@ touches these fields; don't reintroduce a local copy):
 
 `app.py` (inventory/App tab) · `2_Watch.py` (detail: edit, photos incl. photo-first spec
 lookup via Claude, costs, danger-zone delete) · `3_New_Watch.py` · `4_Shipment.py` ·
-`5_Bid_Calculator.py` · `6_Import_Shipment.py` · `7_Offer_Analyzer.py` (real-time eBay offer
-evaluation + counter suggestions, "listed" status only) · `8_eBay_Drafts.py` (generates an
-eBay bulk-upload draft CSV from selected watches) · `9_Financials.py` (Capital Deployed /
+`5_Bid_Calculator.py` (backward max-bid from an expected sale price; see Market Research +
+Custom Profit Range below) · `6_Import_Shipment.py` · `7_Offer_Analyzer.py` (real-time eBay
+offer evaluation + counter suggestions, "listed" status only) · `8_eBay_Drafts.py` (generates
+an eBay bulk-upload draft CSV from selected watches) · `9_Financials.py` (Capital Deployed /
 Realized P&L / Style Performance aggregated from existing watch records, plus "Ask Your
 Data" — sends the full inventory+sales CSV to `claude-opus-4-5` for free-form analysis
-instead of canned reports; excludes `is_personal` watches from all financial calcs).
+instead of canned reports; excludes `is_personal` watches from all financial calcs) ·
+`10_Ad_Campaigns.py`.
+
+**Bid Calculator additions (2026-08-21):**
+- **Custom Profit Range** — a min/max profit slider (toggle: % of sale or flat $) that
+  overrides the fixed Fast/Standard/Patient tiers for one calculation, via a new
+  `custom_profit_targets: {"min": x, "max": y}` param on `backward_max_bid()` /
+  `POST /pricing/max-bid` (both keys optional, additive — doesn't touch the existing tiers).
+  Added because the fixed tiers are dominated by the $50 floor on cheap watches and can
+  undersell what's actually acceptable.
+- **Market Research** — free-text watch description → Claude (`claude-sonnet-5`, not Opus;
+  this is extraction/synthesis, not hard reasoning) searches eBay/Chrono24/Reddit live via the
+  `web_search_20260209` + `web_fetch_20260209` server-side tools and returns a comp-backed
+  price range with an explicit domestic-vs-overseas import-friction adjustment per comp,
+  ending in a parseable `ESTIMATE: $low-$high` line the page turns into a "use as Expected
+  Sale Price" handoff (session-state key `bid_calc_expected_sale`, same pattern as other
+  key-bound example-button widgets in this file). **Tuning notes from live testing** — don't
+  re-derive these from scratch if touching this code:
+  - `max_uses: 10` on both tools ran ~3 min, ~680K input tokens (~$1.50-2/query at Sonnet
+    5 pricing), and still sometimes hit `max_tokens` before writing any final text at all
+    (empty response, no `text` block). `max_uses: 4` on both sometimes burns the whole search
+    budget before ever fetching a page, falling back to a knowledge-only estimate. Shipped at
+    **6 search / 4 fetch**, `max_tokens: 16000`, `output_config: {"effort": "medium"}` — a
+    middle ground, not a guarantee; the query is inherently non-deterministic run to run.
+  - When it can't find real comps in budget, the prompt tells it to say so plainly rather than
+    fabricate listings — confirmed working in testing (it flagged "no Chrono24/Reddit data for
+    this reference" instead of inventing any). Don't remove that instruction.
+  - **`st.markdown()` treats bare `$...$` as inline KaTeX math** — an AI response full of
+    dollar amounts gets silently mangled (a `$` opens a math span, the next `$` closes it,
+    everything between renders as garbled LaTeX). Escape every `$` as `\$` before rendering
+    any AI-generated text that might contain dollar amounts — this bit both the main
+    `st.markdown(result_text)` call and the `st.info(...)` summary line here.
 
 **Convention:** every watch-selection dropdown must show `[watch_id] Brand Collection
 Reference` — duplicate references without the ID prefix caused repeated confusion bugs
