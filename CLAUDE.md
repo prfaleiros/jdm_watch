@@ -122,18 +122,39 @@ instead of canned reports; excludes `is_personal` watches from all financial cal
   re-derive these from scratch if touching this code:
   - `max_uses: 10` on both tools ran ~3 min, ~680K input tokens (~$1.50-2/query at Sonnet
     5 pricing), and still sometimes hit `max_tokens` before writing any final text at all
-    (empty response, no `text` block). `max_uses: 4` on both sometimes burns the whole search
-    budget before ever fetching a page, falling back to a knowledge-only estimate. Shipped at
-    **6 search / 4 fetch**, `max_tokens: 16000`, `output_config: {"effort": "medium"}` — a
-    middle ground, not a guarantee; the query is inherently non-deterministic run to run.
+    (empty response, no `text` block). `max_uses: 4/4` sometimes burns the whole search budget
+    before ever fetching a page, falling back to a knowledge-only estimate — confirmed live on
+    a broad description ("Seiko 5 SNX4xx series", spans several distinct sub-models) that
+    needed several searches just to disambiguate. Shipped at **8 search / 4 fetch**,
+    `max_tokens: 16000`, `output_config: {"effort": "medium"}` — a middle ground, not a
+    guarantee; the query is inherently non-deterministic run to run, and vaguer descriptions
+    need more search headroom than an exact reference number does. Tell Paulo to give the
+    most specific reference he has — it measurably tightens both the search cost and the
+    result (a vague family-level description blends sub-models with different value tiers
+    into one wide range instead of pinpointing the one he means).
+  - **WatchCharts (watchcharts.com)** is named first in the prompt as a market-pricing
+    aggregator to check before raw listing search — when it has a page with a real synthesized
+    price for the reference, it's a much better anchor than piecing one together from scratch.
+    But it doesn't always have one: for less common/older references its pages can expose only
+    locked/placeholder fields with no visible price, and the model correctly falls back to
+    eBay/Chrono24/Reddit search in that case (confirmed in testing) — don't assume a WatchCharts
+    hit is guaranteed, it's a "check first if available," not a hard dependency.
+  - **`COMPS: yes|no`** is a second required line (before `ESTIMATE:`) the prompt asks for,
+    parsed separately from the estimate — drives a loud `st.warning` instead of the normal
+    `st.info` when the model had to fall back to a knowledge-only guess with no real source
+    found. Added after a real early failure: an unconstrained knowledge-based guess for a
+    mass-market reference came back **3-5x low** ($45-85 vs. real comps around $200-350) with
+    no visual distinction from a comp-backed result — don't let that regress by dropping the
+    `COMPS` gate or rendering both cases the same way again.
   - When it can't find real comps in budget, the prompt tells it to say so plainly rather than
-    fabricate listings — confirmed working in testing (it flagged "no Chrono24/Reddit data for
-    this reference" instead of inventing any). Don't remove that instruction.
+    fabricate listings — confirmed working in testing (it flagged missing Chrono24/Reddit data
+    and an unconfirmed Reddit "sold" post as color, not a price point, instead of inventing
+    either). Don't remove that instruction.
   - **`st.markdown()` treats bare `$...$` as inline KaTeX math** — an AI response full of
     dollar amounts gets silently mangled (a `$` opens a math span, the next `$` closes it,
     everything between renders as garbled LaTeX). Escape every `$` as `\$` before rendering
     any AI-generated text that might contain dollar amounts — this bit both the main
-    `st.markdown(result_text)` call and the `st.info(...)` summary line here.
+    `st.markdown(result_text)` call and the `st.info(...)`/`st.warning(...)` summary line here.
 
 **Convention:** every watch-selection dropdown must show `[watch_id] Brand Collection
 Reference` — duplicate references without the ID prefix caused repeated confusion bugs

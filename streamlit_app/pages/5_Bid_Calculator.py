@@ -18,11 +18,17 @@ they're considering bidding on:
 
 "{description}"
 
-Search eBay, Chrono24, and Reddit (r/watchexchange) for comparable listings — the same \
-reference/model where possible, or the closest realistic equivalent if the description is \
-loose. Prefer recently SOLD/completed listings over active asking prices when you can find \
-them (active listings overstate what things actually sell for). For each comp you use, note: \
-source, title, price, currency, seller/ship-from location, listed shipping cost, and a link.
+Start with WatchCharts (watchcharts.com) if you can find a page for this reference — it's a \
+purpose-built watch market-pricing aggregator that gives a synthesized market price directly, \
+which anchors the estimate far better than piecing one together from scratch, and is more \
+search-budget-efficient than starting cold on individual listings. Then supplement/verify with \
+eBay, Chrono24, and Reddit (r/watchexchange) for comparable listings — the same reference/model \
+where possible, or the closest realistic equivalent if the description is loose. Prefer \
+recently SOLD/completed listings over active asking prices when you can find them (active \
+listings overstate what things actually sell for; an unconfirmed "sold" post without a stated \
+accepted price isn't a comp — note it as color, not as a price point). For each comp you use, \
+note: source, title, price, currency, seller/ship-from location, listed shipping cost, and a \
+link.
 
 Apples-to-apples adjustment (this is the part that matters most): a domestic-US listing at \
 face price is directly comparable to what this reseller could realistically net. An overseas \
@@ -44,8 +50,12 @@ Give a realistic estimated resale price range for this watch in current conditio
 not a rare-mint outlier. Structure your response as:
 1. A short table or list of the comps you found and used, with your per-comp adjustment noted
 2. Your reasoning for the final range (2-4 sentences)
-3. End with EXACTLY one line, no other text on it, in this format:
+3. End with EXACTLY these two lines, no other text on either, in this exact format:
+COMPS: yes|no
 ESTIMATE: $<low>-$<high>
+Use "COMPS: no" if you're relying on general knowledge rather than at least one real \
+source (WatchCharts, an eBay/Chrono24/Reddit listing, etc.) you actually found this session — \
+be strict about this, it drives a real warning shown to the user.
 """
 
 
@@ -55,15 +65,16 @@ def _research_market_value(description: str) -> str:
 
     # Tuned from live testing: 10/10 max_uses runs ~3min, ~$1.50-2/query, and can still run out
     # of output budget before writing an answer. 4/4 sometimes burns the whole search budget
-    # before ever fetching a page, falling back to a no-comps estimate. 6 search / 4 fetch is a
-    # reasonable middle ground — still not fully deterministic run to run (agentic search never
-    # is), but noticeably more reliable in practice.
+    # before ever fetching a page, falling back to a no-comps estimate — confirmed in practice
+    # on a broad description ("Seiko 5 SNX4xx series") that needed several searches just to
+    # disambiguate before it could even start comping. Bumped search to 8 for headroom on vague
+    # descriptions; fetch stays lower since each fetch is the expensive part (full page content).
     with client.messages.stream(
         model="claude-sonnet-5",
         max_tokens=16000,
         output_config={"effort": "medium"},
         tools=[
-            {"type": "web_search_20260209", "name": "web_search", "max_uses": 6},
+            {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
             {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 4},
         ],
         messages=[{"role": "user", "content": MARKET_RESEARCH_PROMPT.format(description=description)}],
@@ -77,8 +88,8 @@ def _research_market_value(description: str) -> str:
 st.subheader("🔍 Market Research")
 st.caption(
     "Describe the watch — model, reference, or just \"diver automatic Seiko 5 from the 90s "
-    "with original bracelet\" — and Claude searches eBay/Chrono24/Reddit for comps and "
-    "estimates a realistic resale range, adjusted for domestic-vs-overseas shipping/import "
+    "with original bracelet\" — and Claude checks WatchCharts plus eBay/Chrono24/Reddit for "
+    "comps and estimates a realistic resale range, adjusted for domestic-vs-overseas shipping/import "
     "friction. Feeds the Expected Sale Price below. **Takes 1-2 minutes** — it's doing several "
     "real searches, not a canned lookup. Occasionally it won't find solid comps in time and "
     "falls back to a knowledge-based estimate instead — it'll say so plainly when that happens, "
@@ -104,12 +115,25 @@ if st.session_state.get("market_research_result"):
     st.markdown(result_text.replace("$", "\\$"))
 
     m = re.search(r"ESTIMATE:\s*\$?([\d,.]+)\s*-\s*\$?([\d,.]+)", result_text)
+    comps_match = re.search(r"COMPS:\s*(yes|no)", result_text, re.IGNORECASE)
+    has_comps = bool(comps_match) and comps_match.group(1).lower() == "yes"
+
     if m:
         low, high = float(m.group(1).replace(",", "")), float(m.group(2).replace(",", ""))
         midpoint = round((low + high) / 2, 2)
         rc1, rc2 = st.columns([2, 1])
-        rc1.info(f"Estimated range: **\\${low:,.0f} – \\${high:,.0f}**  ·  midpoint: **\\${midpoint:,.0f}**")
-        if rc2.button("Use midpoint as Expected Sale Price ↓"):
+        range_text = f"Estimated range: **\\${low:,.0f} – \\${high:,.0f}**  ·  midpoint: **\\${midpoint:,.0f}**"
+        if has_comps:
+            rc1.info(range_text)
+            button_label = "Use midpoint as Expected Sale Price ↓"
+        else:
+            rc1.warning(
+                "⚠️ **No live comps found** — this is a knowledge-based guess only, not "
+                "verified against real listings. Treat it as a rough starting point, not a "
+                "number to bid against.\n\n" + range_text
+            )
+            button_label = "Use midpoint anyway (unverified) ↓"
+        if rc2.button(button_label):
             st.session_state["bid_calc_expected_sale"] = midpoint
             st.rerun()
 
