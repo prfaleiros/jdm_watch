@@ -41,8 +41,17 @@ Profit target per tier = `max(cost_basis × roi_pct, min_profit_usd)`.
   thin-margin listing. Applied in both `forward_price()` (listing price) and
   `backward_max_bid()` (bid calculator — the more conservative of the ROI or floor constraint
   wins).
-- eBay effective rate = FVF (15%) × (1 + sales tax blend 10%) + ad rate (default 5%,
-  overridable per listing).
+- **Sale platforms are config, not code** (as of 2026-10-17): the `platforms` block in
+  `config.json` (eBay 15% + $0.40, Chrono24 6.5%, Reddit/PayPal 2.9% + $0.30) drives everything.
+  Fee = `fee_rate × (price + buyer sales tax if fee_on_tax) + fee_flat_usd`, deducted from the
+  payout. Buyer sales tax defaults to `default_sales_tax_pct` (8) and is overridable per call
+  (`sales_tax_pct`); ad rate (default 5%) only applies to `supports_ads` platforms (eBay).
+  To add a platform, add a block, upload config.json, force a cold start — it appears in
+  Close Sale, the Listing tab, Offer Analyzer and Bid Calculator. Formulas live only in
+  `pricing.py`; `streamlit_app/fees.py` imports that module (the repo is checked out whole on
+  Streamlit Cloud) and loads config via `GET /config`, falling back to the repo's config.json
+  with a warning. `forward_price()` returns `prices: {platform: price}` per tier (plus legacy
+  `ebay_price`/`reddit_price`). `direct`/`other` stay selectable on old sale records only.
 - Shipping: free USPS domestic (absorbed as $6 flat cost); international transitioning to a
   flat $40 rate via UPS Worldwide Expedited with limited destinations.
 - Full fee/config schema lives in `config/config.json` — read it directly rather than
@@ -156,10 +165,21 @@ instead of canned reports; excludes `is_personal` watches from all financial cal
     any AI-generated text that might contain dollar amounts — this bit both the main
     `st.markdown(result_text)` call and the `st.info(...)`/`st.warning(...)` summary line here.
 
-**Convention:** every watch-selection dropdown must show `[watch_id] Brand Collection
-Reference` — duplicate references without the ID prefix caused repeated confusion bugs
-across the App tab, Shipment page, and Offer Analyzer before this was standardized. Apply it
-to any new dropdown from the start.
+**Convention (2026-10-17): no watch dropdowns.** Picking a watch goes through the shared
+`streamlit_app/watch_picker.py` — a filterable, clickable table (single-row = click to open,
+`multi=True` = tick rows). Used by the App tab, Watch page (no selection → list; "← All
+watches" returns), Offer Analyzer (listed only), Shipment, eBay Drafts, Ad Campaigns, and the
+batch status update. Selection state: `selected_watch_id` (Watch page, set by App/New Watch)
+and `offer_watch_id`; call `reset_picker(key)` after acting on a pick or the old row is
+re-selected. Not converted: the per-invoice-line merge/assign selectors in
+`6_Import_Shipment.py` (many inline pickers per page). Also: `st.markdown`/`st.caption` with
+two or more `$` needs `\$` escapes (bit the Listing tab's cost line again).
+
+**Listed date:** `listed_date` on the watch record is stamped by the transition handler on the
+*first* move to `listed` (a relist keeps it; `listed_date` is patchable). Financials'
+days-to-sell is `sale_date − listed_date` (sales lacking it are excluded and counted in a
+caption), not record age. Backfill existing watches with `scripts/migrate_listed_date.py`
+(dry-run default, `--apply` to write).
 
 ## Known gotchas
 

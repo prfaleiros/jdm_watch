@@ -83,6 +83,13 @@ def add_cost(watch_id: str, amount_usd: float, category: str, notes: str) -> dic
     return r.json()
 
 
+def get_config() -> dict:
+    """config.json (platform fees, tax/ad defaults, tier targets) — see fees.py."""
+    r = requests.get(_url("config"), headers=_get_headers())
+    _raise(r, "get_config")
+    return r.json()
+
+
 def get_pricing(watch_id: str) -> dict:
     r = requests.get(_url(f"watches/{watch_id}/pricing"), headers=_get_headers())
     _raise(r, f"get_pricing({watch_id})")

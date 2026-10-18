@@ -13,7 +13,7 @@ EDITABLE_FIELDS = {
     "auction_price_jpy", "auction_price_usd",
     "buyee_platform_jpy", "buyee_inspection_jpy", "domestic_shipping_jpy", "buyee_fees_usd",
     "customs_duty_usd", "shipment_id", "intl_shipping_usd",
-    "sale_price_usd", "sale_platform", "sale_date",
+    "listed_date", "sale_price_usd", "sale_platform", "sale_date",
     "shipping_cost_usd", "shipping_label_source", "platform_fees_usd",
     "is_personal", "notes", "total_labor_hours", "feature_pitch",
     "water_resistance", "movement_type", "crystal_type",

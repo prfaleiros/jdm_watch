@@ -3,6 +3,7 @@ import streamlit as st
 from datetime import date as date_type
 
 import api
+from watch_picker import watch_picker
 from constants import AD_CAMPAIGN_PLATFORMS, AD_CAMPAIGN_PLATFORM_LABELS
 
 st.set_page_config(page_title="Ad Campaigns", layout="wide", page_icon="⌚")
@@ -31,16 +32,9 @@ if not eligible:
     st.info("No eligible business watches.")
     st.stop()
 
-watch_opts = {
-    w["watch_id"]: f"[{w['watch_id']}] {w.get('brand', '')} {w.get('collection', '')} "
-                    f"{w.get('reference', '')}"
-    for w in eligible
-}
-
-selected_ids = st.multiselect(
-    "Watches this campaign covered",
-    list(watch_opts.keys()),
-    format_func=lambda wid: watch_opts[wid],
+st.write("Watches this campaign covered")
+selected_ids = watch_picker(
+    eligible, key="campaign", multi=True, empty_msg="No eligible business watches.",
 )
 
 c1, c2, c3 = st.columns(3)

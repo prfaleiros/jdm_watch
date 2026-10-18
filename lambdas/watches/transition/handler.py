@@ -37,6 +37,11 @@ def handler(event, context):
         "updated_at": now_iso(),
         "GSI1PK": f"STATUS#{to_status}",
     }
+    # First move to "listed" stamps listed_date (like sale_date for sold) so time-to-sell is
+    # measured from the business event, not record age. A relist keeps the original date;
+    # correct it via PATCH (listed_date is editable) if the first listing was wrong.
+    if to_status == "listed" and not watch.get("listed_date"):
+        updates["listed_date"] = event_date or now_iso()[:10]
     update_fields(f"W#{watch_id}", "META", updates)
 
     return api_response(200, {

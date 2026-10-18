@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import api
+from watch_picker import watch_picker
 
 st.set_page_config(page_title="Shipment", layout="wide", page_icon="⌚")
 st.title("Shipment")
@@ -90,20 +91,18 @@ with tab_allocate:
     if not eligible:
         st.info("No unlinked business watches found.")
     else:
-        eligible_labels = {
-            f"[{w['watch_id']}] {w['brand']} {w['collection']} {w['reference']}": w["watch_id"]
-            for w in eligible
-        }
-        selected_labels = st.multiselect(
-            "Watches in this shipment",
-            list(eligible_labels.keys()),
-            default=[
-                f"[{w['watch_id']}] {w['brand']} {w['collection']} {w['reference']}"
-                for w in eligible
-                if w.get("shipment_id") == shipment_id
-            ],
+        already = [w for w in eligible if w.get("shipment_id") == shipment_id and shipment_id]
+        if already:
+            st.caption(
+                f"Already in this shipment: "
+                + ", ".join(f"`{w['watch_id']}`" for w in already)
+                + " — tick only the watches still to be added."
+            )
+        st.write("Watches to add to this shipment")
+        selected_ids = watch_picker(
+            [w for w in eligible if w not in already], key="shipment", multi=True,
+            empty_msg="No unlinked business watches found.",
         )
-        selected_ids = [eligible_labels[l] for l in selected_labels]
 
         if selected_ids:
             st.caption(f"{len(selected_ids)} watches selected.")

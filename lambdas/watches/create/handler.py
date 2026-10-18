@@ -7,6 +7,8 @@ from costs import recalc_landed, total_cost_basis
 def handler(event, context):
     body = json.loads(event.get("body", "{}"))
     item = watch_item(body)
+    if item["current_status"] == "listed" and not item.get("listed_date"):
+        item["listed_date"] = item["created_at"][:10]  # created already listed
     item["total_landed_cost_usd"] = recalc_landed(item)
     # No ADDCOST records yet at creation, so pre-sale costs are 0 and cost basis == landed.
     item["total_cost_basis_usd"] = total_cost_basis(item["total_landed_cost_usd"], 0)

@@ -1,13 +1,35 @@
 {
-  "_comment": "JDM Watch Business — Lambda config. Replaces fees.csv as of 2026-05-13.",
+  "_comment": "JDM Watch Business — Lambda config. Replaces fees.csv as of 2026-05-13. Sale platforms (fees) are configured in the `platforms` block: add one and it shows up everywhere (pricing, Close Sale, Offer Analyzer). Upload to the config bucket, then force a Lambda cold start (see CLAUDE.md).",
 
-  "ebay_fvf_rate":          "0.15",
-  "sales_tax_blend":        "0.10",
+  "default_sales_tax_pct":  "8",
+
+  "platforms": {
+    "ebay": {
+      "label": "eBay",
+      "fee_rate": "0.15",
+      "fee_flat_usd": "0.40",
+      "fee_on_tax": true,
+      "supports_ads": true
+    },
+    "chrono24": {
+      "label": "Chrono24",
+      "fee_rate": "0.065",
+      "fee_flat_usd": "0",
+      "fee_on_tax": true,
+      "supports_ads": false
+    },
+    "reddit": {
+      "label": "Reddit (PayPal G&S)",
+      "fee_rate": "0.029",
+      "fee_flat_usd": "0.30",
+      "fee_on_tax": false,
+      "supports_ads": false
+    }
+  },
+
   "shipping_to_buyer":      "6.00",
   "labor_rate":             "1.00",
   "customs_rate":           "0.15",
-  "paypal_rate":            "0.029",
-  "paypal_flat":            "0.30",
 
   "buyee_platform_jpy":     "500",
   "buyee_service_jpy":      "500",

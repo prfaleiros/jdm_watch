@@ -69,6 +69,10 @@ def watch_item(data: dict) -> dict:
         "total_additional_costs_usd": data.get("total_additional_costs_usd", 0),
         # derived
         "total_landed_cost_usd": data.get("total_landed_cost_usd"),
+        # Business-event dates (set by the transition handler, not record age). listed_date is
+        # the FIRST move to "listed" — a relist doesn't reset it, so days-to-sell measures the
+        # whole time the piece has been on the market.
+        "listed_date": data.get("listed_date"),
         # sale
         "sale_price_usd": data.get("sale_price_usd"),
         "sale_platform": data.get("sale_platform"),

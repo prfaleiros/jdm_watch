@@ -77,17 +77,26 @@ if not active.empty:
     )
 
     active = active.copy()
+    now_utc = pd.Timestamp.now(tz="UTC")
     active["days_in_system"] = (
-        pd.Timestamp.now(tz="UTC") - pd.to_datetime(active["created_at"], utc=True, errors="coerce")
+        now_utc - pd.to_datetime(active["created_at"], utc=True, errors="coerce")
     ).dt.days
-    aging = active.sort_values("days_in_system", ascending=False).head(5)
+    # Days on the market, from the listing event (not record age). Blank for pieces not listed.
+    if "listed_date" not in active.columns:
+        active["listed_date"] = None
+    active["days_listed"] = (
+        now_utc - pd.to_datetime(active["listed_date"], utc=True, errors="coerce")
+    ).dt.days
+    aging = active.sort_values(["days_listed", "days_in_system"], ascending=False).head(5)
     if not aging.empty:
-        st.caption("Oldest pieces still in inventory")
+        st.caption("Oldest pieces still in inventory (listed pieces first, by days on the market)")
         st.dataframe(
-            aging[["reference", "brand", "collection", "current_status", "days_in_system", "cost_basis"]]
+            aging[["reference", "brand", "collection", "current_status", "days_listed",
+                   "days_in_system", "cost_basis"]]
             .rename(columns={
                 "current_status": "Status",
-                "days_in_system": "Days",
+                "days_listed": "Days listed",
+                "days_in_system": "Days in system",
                 "cost_basis": "Cost ($)",
             }),
             width="stretch",
@@ -146,20 +155,32 @@ else:
     sold["tier"] = sold["collection"].apply(_tier)
 
     group_choice = st.selectbox(
-        "Group by", ["Tier", "Movement Type", "Case Material", "Collection", "Reference"],
+        "Group by", ["Tier", "Sale Platform", "Movement Type", "Case Material", "Collection", "Reference"],
     )
     group_col = {
         "Tier": "tier",
+        "Sale Platform": "sale_platform",
         "Collection": "collection",
         "Case Material": "case_material",
         "Movement Type": "movement_type",
         "Reference": "reference",
     }[group_choice]
 
+    # Time to sell = listing event -> sale event. (It used to be sale_date - created_at, i.e.
+    # record age, which counted months of sourcing/shipping/bench time as "time to sell".)
+    # Sales with no listed_date are left out of the average rather than guessed at.
+    if "listed_date" not in sold.columns:
+        sold["listed_date"] = None
     sold["days_to_sell"] = (
         pd.to_datetime(sold["sale_date"], utc=True, errors="coerce")
-        - pd.to_datetime(sold["created_at"], utc=True, errors="coerce")
+        - pd.to_datetime(sold["listed_date"], utc=True, errors="coerce")
     ).dt.days
+    n_timed = int(sold["days_to_sell"].notna().sum())
+    if n_timed < len(sold):
+        st.caption(
+            f"Days to sell is based on {n_timed} of {len(sold)} sales — the rest have no "
+            "listed date (run scripts/migrate_listed_date.py, or set it in the Watch page's Admin tab)."
+        )
 
     # Some older records never had every field written to DynamoDB at all (e.g.
     # movement_type), which becomes NaN once loaded into a DataFrame — and pandas'
@@ -222,7 +243,7 @@ if st.button("Analyze", type="primary", disabled=not question.strip()):
     with st.spinner("Analyzing…"):
         ai_cols = [c for c in [
             "watch_id", "brand", "collection", "reference", "jdm_model", "case_material", "movement_type",
-            "current_status", "created_at", "total_landed_cost_usd", "total_presale_costs_usd",
+            "current_status", "created_at", "listed_date", "total_landed_cost_usd", "total_presale_costs_usd",
             "cost_basis", "total_additional_costs_usd", "total_labor_hours",
             "sale_price_usd", "sale_platform", "sale_date", "shipping_cost_usd",
             "shipping_label_source", "platform_fees_usd", "net_profit_usd",

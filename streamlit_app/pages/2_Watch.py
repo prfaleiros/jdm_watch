@@ -6,42 +6,12 @@ import api
 from constants import (
     VALID_STATUSES, STATUS_LABELS, ACTIVE_STATUSES,
     PHOTO_SLOTS, CASE_MATERIALS, CRYSTAL_TYPES, BRACELET_MATERIALS,
-    COST_CATEGORIES, SALE_PLATFORMS, BRANDS, CALIBER_HINTS,
+    COST_CATEGORIES, BRANDS, CALIBER_HINTS,
     SHIPPING_LABEL_SOURCES, SHIPPING_LABEL_SOURCE_LABELS,
 )
+import fees
 from logger import log
-
-
-# ── Pricing helper (client-side what-if, no API call) ──────────────────────────
-
-def _calc_ebay_price(landed, labor_hrs, labor_rate, shipping,
-                     ebay_fvf, tax_blend, ad_rate_pct, roi_pct, min_profit):
-    L   = Decimal(str(landed))
-    lc  = Decimal(str(labor_hrs)) * Decimal(str(labor_rate))
-    sh  = Decimal(str(shipping))
-    eff = Decimal(str(ebay_fvf)) * (Decimal("1") + Decimal(str(tax_blend))) \
-          + Decimal(str(ad_rate_pct)) / Decimal("100")
-    roi = Decimal(str(roi_pct)) / Decimal("100")
-    floor = Decimal(str(min_profit))
-    target = max(L * roi, floor)
-    price  = (L + lc + sh + target) / (Decimal("1") - eff)
-    return (
-        float(price.quantize(Decimal("0.01"), ROUND_HALF_UP)),
-        float(target.quantize(Decimal("0.01"), ROUND_HALF_UP)),
-    )
-
-
-def _calc_direct_price(landed, labor_hrs, labor_rate, shipping,
-                       pp_rate, pp_flat, roi_pct, min_profit):
-    L     = Decimal(str(landed))
-    lc    = Decimal(str(labor_hrs)) * Decimal(str(labor_rate))
-    sh    = Decimal(str(shipping))
-    roi   = Decimal(str(roi_pct)) / Decimal("100")
-    floor = Decimal(str(min_profit))
-    target = max(L * roi, floor)
-    price  = (L + lc + sh + target + Decimal(str(pp_flat))) \
-             / (Decimal("1") - Decimal(str(pp_rate)))
-    return float(price.quantize(Decimal("0.01"), ROUND_HALF_UP))
+from watch_picker import watch_picker, reset_picker
 
 
 # ── Pitch generation (Streamlit-side Claude call) ──────────────────────────────
@@ -221,33 +191,35 @@ st.set_page_config(page_title="Watch Detail", layout="wide", page_icon="⌚")
 
 
 # ── Watch selector ────────────────────────────────────────────────────────────
+# No dropdown: with dozens of watches, pick from the shared clickable list. The selection
+# lives in session state (also set by the Inventory list and New Watch), so this page
+# reopens on the last watch; "← All watches" returns to the list.
 
-@st.cache_data(ttl=30)
-def load_list():
-    return api.list_watches()
+watch_id = st.session_state.get("selected_watch_id")
 
-try:
-    all_watches = load_list()
-except Exception as e:
-    st.error(f"Could not load watch list: {e}")
+if not watch_id:
+    st.title("Watches")
+
+    @st.cache_data(ttl=30)
+    def load_list():
+        return api.list_watches()
+
+    try:
+        all_watches = load_list()
+    except Exception as e:
+        st.error(f"Could not load watch list: {e}")
+        st.stop()
+
+    picked = watch_picker(all_watches, key="watchpage", empty_msg="No watches in inventory.")
+    if picked:
+        st.session_state["selected_watch_id"] = picked[0]
+        st.rerun()
     st.stop()
 
-if not all_watches:
-    st.warning("No watches in inventory.")
-    st.stop()
-
-label_to_id = {
-    f"[{w['watch_id']}] {w['brand']} {w['collection']} {w['reference']} · {STATUS_LABELS.get(w['current_status'], w['current_status'])}": w["watch_id"]
-    for w in all_watches
-}
-
-default_id = st.session_state.get("selected_watch_id")
-labels = list(label_to_id.keys())
-default_idx = next((i for i, k in enumerate(labels) if label_to_id[k] == default_id), 0)
-
-chosen_label = st.selectbox("Watch", labels, index=default_idx)
-watch_id = label_to_id[chosen_label]
-st.session_state["selected_watch_id"] = watch_id
+if st.button("← All watches"):
+    st.session_state.pop("selected_watch_id", None)
+    reset_picker("watchpage")
+    st.rerun()
 
 
 # ── Load full watch record ────────────────────────────────────────────────────
@@ -255,7 +227,13 @@ st.session_state["selected_watch_id"] = watch_id
 try:
     watch = api.get_watch(watch_id)
 except Exception as e:
-    st.error(f"Could not load watch: {e}")
+    st.error(f"Could not load watch {watch_id}: {e}")
+    st.stop()
+
+try:
+    cfg = fees.load_cfg()
+except Exception as e:
+    st.error(f"Could not load pricing config: {e}")
     st.stop()
 
 transitions = watch.get("transitions", [])
@@ -275,7 +253,11 @@ with hdr_text:
         f"&nbsp;&nbsp;<span style='font-size:0.85em;color:gray'>{watch.get('reference','')}{personal_badge}</span>",
         unsafe_allow_html=True,
     )
-    st.caption(f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  Cost: **${header_cost_basis:,.2f}**")
+    listed_str = f"  ·  Listed: **{watch['listed_date']}**" if watch.get("listed_date") else ""
+    st.caption(
+        f"Status: **{status_label}**  ·  ID: `{watch_id}`  ·  "
+        f"Cost: **${header_cost_basis:,.2f}**{listed_str}"
+    )
 
 st.divider()
 
@@ -683,8 +665,12 @@ with tab_transitions:
             close_sale_price = cs1.number_input(
                 "Sale Price (USD) *", min_value=0.01, step=1.0, format="%.2f",
             )
-            close_platform_idx = SALE_PLATFORMS.index("ebay") if "ebay" in SALE_PLATFORMS else 0
-            close_platform = cs2.selectbox("Platform", SALE_PLATFORMS, index=close_platform_idx)
+            close_ids = fees.sale_platform_ids(cfg)
+            close_platform = cs2.selectbox(
+                "Platform", close_ids,
+                index=close_ids.index("ebay") if "ebay" in close_ids else 0,
+                format_func=lambda p: fees.platform_label(cfg, p),
+            )
             close_sale_date = cs3.date_input("Sale Date", value=date_type.today())
 
             cs4, cs5, cs6 = st.columns(3)
@@ -699,9 +685,9 @@ with tab_transitions:
             close_fees = cs5.number_input(
                 "Platform Fees (USD)",
                 value=0.0, min_value=0.0, step=0.50, format="%.2f",
-                help="Copy from eBay Seller Hub / Payments after the transaction settles. "
-                     "eBay applies 15% on (sale price + buyer's sales tax) + $0.40 flat — "
-                     "can't be pre-calculated without knowing the buyer's state.",
+                help="Copy from the platform's payout/fee statement after the transaction "
+                     "settles. Fees apply to the sale price plus the buyer's sales tax, which "
+                     "isn't known until then, so this is entered rather than estimated.",
             )
             close_hours = cs6.number_input(
                 "Hours (listing + packing)", value=0.0, min_value=0.0, step=0.25, format="%.2f",
@@ -808,8 +794,13 @@ with tab_transitions:
                 value=float(watch.get("sale_price_usd") or 0),
                 min_value=0.0, step=1.0, format="%.2f",
             )
-            plat_idx = SALE_PLATFORMS.index(watch.get("sale_platform","ebay")) if watch.get("sale_platform") in SALE_PLATFORMS else 0
-            sale_platform = rs2.selectbox("Platform", SALE_PLATFORMS, index=plat_idx)
+            edit_ids = fees.sale_platform_ids(cfg, watch.get("sale_platform"))
+            plat_idx = edit_ids.index(watch["sale_platform"]) if watch.get("sale_platform") in edit_ids else (
+                edit_ids.index("ebay") if "ebay" in edit_ids else 0)
+            sale_platform = rs2.selectbox(
+                "Platform", edit_ids, index=plat_idx,
+                format_func=lambda p: fees.platform_label(cfg, p),
+            )
 
             rs3, rs4 = st.columns(2)
             sale_date_val = rs3.date_input("Sale Date", value=existing_sale_date)
@@ -833,7 +824,7 @@ with tab_transitions:
                 "Platform Fees (USD)",
                 value=float(watch.get("platform_fees_usd") or 0),
                 min_value=0.0, step=0.50, format="%.2f",
-                help="eBay FVF charged after the sale. Leave 0 to let the backend estimate from config.",
+                help="Total platform fees charged on the sale (from the payout statement).",
             )
 
             if watch.get("net_profit_usd") is not None:
@@ -1102,66 +1093,64 @@ with tab_listing:
 
     st.divider()
 
-    # ── Interactive pricing calculator ────────────────────────────────────────
-    st.subheader("Pricing")
+    # ── Platform pricing calculator ───────────────────────────────────────────
+    st.subheader("Pricing by platform")
+    st.caption(
+        "Each platform's fee is taken on the sale price plus the buyer's sales tax, then "
+        "deducted from the payout — so a cheaper platform lets you list lower for the same profit."
+    )
 
-    # Adjustable parameters
-    ac1, ac2, ac3 = st.columns(3)
-    ad_rate  = ac1.number_input(
+    ac1, ac2, ac3, ac4 = st.columns(4)
+    tax_pct = ac1.number_input(
+        "Buyer sales tax %", min_value=0.0, max_value=15.0,
+        value=fees.default_tax_pct(cfg), step=0.25, format="%.2f",
+        help="Varies by state/county. Included in the fee base on platforms that charge fees on tax.",
+    )
+    ad_rate = ac2.number_input(
         "Ad rate %", min_value=0.0, max_value=20.0,
-        value=float(breakdown.get("ad_rate_pct", 5)),
+        value=float(breakdown.get("ad_rate_pct", fees.default_ad_pct(cfg))),
         step=0.5, format="%.1f",
-        help="eBay Promoted Listings rate. Charged only on promoted sales; "
-             "treat as a planning assumption.",
+        help="Promoted Listings rate — applies only to platforms that support ads (eBay). "
+             "A planning assumption; charged only on promoted sales.",
     )
-    shipping_out = ac2.number_input(
+    shipping_out = ac3.number_input(
         "Shipping to buyer ($)", min_value=0.0, max_value=50.0,
-        value=6.0, step=0.50, format="%.2f",
+        value=float(breakdown.get("shipping_to_buyer", 6.0)), step=0.50, format="%.2f",
     )
-    min_profit = ac3.number_input(
+    min_profit = ac4.number_input(
         "Min profit floor ($)", min_value=0.0,
         value=float(breakdown.get("min_profit_usd", 20)),
         step=5.0, format="%.0f",
         help="Profit floor — protects against scaling too low on cheap pieces.",
     )
 
-    # Fixed assumptions shown as caption
-    ebay_fvf   = 0.15
-    tax_blend  = 0.10
-    pp_rate    = 0.029
-    pp_flat    = 0.30
-    labor_rate = 1.0  # matches config
-    st.caption(
-        f"Landed: **${landed:,.2f}**  ·  Labor: **${labor_cost:,.2f}**  ·  "
-        f"eBay FVF: 15% × (1 + 10% tax blend)  ·  "
-        f"Effective rate at {ad_rate:.1f}% ads: "
-        f"**{(ebay_fvf * (1 + tax_blend) + ad_rate/100)*100:.1f}%**"
-    )
+    st.caption(f"Cost basis: **\\${landed:,.2f}**  ·  Labor: **\\${labor_cost:,.2f}**")
+    fee_rows = fees.fee_summary(cfg, tax_pct, ad_rate)
+    st.caption("  ·  ".join(
+        f"**{r['label']}** {r['rate_pct']:.1f}%" + (f" + \\${r['flat']:.2f}" if r["flat"] else "")
+        for r in fee_rows
+    ) + "  (effective share of price taken)")
 
-    # Build tier rows dynamically
-    tiers = [
-        ("Fast",     20),
-        ("Standard", 33),
-        ("Patient",  50),
-    ]
+    priced = fees.forward_price(watch, cfg, tax_pct, ad_rate, shipping_out, min_profit)
     tier_rows = []
-    for label, roi_pct in tiers:
-        e_price, target = _calc_ebay_price(
-            landed, labor_hrs, labor_rate, shipping_out,
-            ebay_fvf, tax_blend, ad_rate, roi_pct, min_profit,
-        )
-        d_price = _calc_direct_price(
-            landed, labor_hrs, labor_rate, shipping_out,
-            pp_rate, pp_flat, roi_pct, min_profit,
-        )
-        tier_rows.append({
-            "Tier":          f"{label} ({roi_pct}% ROI)",
-            "Target profit": f"${target:,.2f}",
-            "eBay":          f"${e_price:,.2f}",
-            "Direct / PP":   f"${d_price:,.2f}",
-        })
-
+    for tier in ("fast", "standard", "patient"):
+        t = priced[tier]
+        row = {"Tier": f"{tier.title()} ({t['roi_pct']:.0f}% ROI)",
+               "Target profit": f"${t['profit_target']:,.2f}"}
+        for r in fee_rows:
+            row[r["label"]] = f"${t['prices'][r['id']]:,.2f}"
+        tier_rows.append(row)
     st.dataframe(pd.DataFrame(tier_rows), hide_index=True, width='stretch')
+
+    if len(fee_rows) > 1:
+        std = priced["standard"]["prices"]
+        hi = max(std, key=std.get)
+        lo = min(std, key=std.get)
+        st.caption(
+            f"At the Standard tier, listing on **{fees.platform_label(cfg, lo)}** instead of "
+            f"**{fees.platform_label(cfg, hi)}** gives the same profit at "
+            f"**\\${std[hi] - std[lo]:,.2f}** lower. Use the Offer Analyzer to compare a specific price."
+        )
 
     st.divider()
 
@@ -1189,7 +1178,7 @@ with tab_listing:
 
 _ADMIN_PATCH_FIELDS = [
     "sale_price_usd", "platform_fees_usd", "shipping_cost_usd", "shipping_label_source",
-    "sale_platform", "sale_date", "auction_price_jpy", "auction_price_usd",
+    "sale_platform", "sale_date", "listed_date", "auction_price_jpy", "auction_price_usd",
     "customs_duty_usd", "buyee_platform_jpy", "buyee_inspection_jpy",
     "domestic_shipping_jpy", "buyee_fees_usd", "intl_shipping_usd", "shipment_id",
     "total_labor_hours", "thumbnail_key", "notes",
@@ -1226,7 +1215,9 @@ with tab_admin:
 
     label_src = watch.get("shipping_label_source") or "—"
     st.caption(
-        f"Shipping label source: **{SHIPPING_LABEL_SOURCE_LABELS.get(label_src, label_src)}**"
+        f"Shipping label source: **{SHIPPING_LABEL_SOURCE_LABELS.get(label_src, label_src)}**  ·  "
+        f"Listed date: **{watch.get('listed_date') or '—'}**  ·  "
+        f"Sale platform: **{fees.platform_label(cfg, watch['sale_platform']) if watch.get('sale_platform') else '—'}**"
     )
 
     st.divider()

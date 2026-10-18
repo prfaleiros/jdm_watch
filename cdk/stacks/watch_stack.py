@@ -90,6 +90,7 @@ class WatchBusinessStack(Stack):
         report_listing   = make_fn("ReportListing",   "reports/listing")
         photo_presign    = make_fn("PhotoPresign",     "photos/presign")
         sale_close       = make_fn("SaleClose",        "sales/close")
+        config_get       = make_fn("ConfigGet",        "config/get")
         photos_bucket.grant_put(photo_presign)
         photos_bucket.grant_read(photo_presign)
         photos_bucket.grant_read(report_listing)
@@ -143,6 +144,8 @@ class WatchBusinessStack(Stack):
 
         pricing_root = api.root.add_resource("pricing")
         pricing_root.add_resource("max-bid").add_method("POST", apigw.LambdaIntegration(pricing_backward), api_key_required=ak)
+
+        api.root.add_resource("config").add_method("GET", apigw.LambdaIntegration(config_get), api_key_required=ak)
 
         CfnOutput(self, "ApiUrl", value=api.url)
 

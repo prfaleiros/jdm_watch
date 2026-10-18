@@ -3,6 +3,7 @@ import re
 import streamlit as st
 import pandas as pd
 import api
+import fees
 
 st.set_page_config(page_title="Bid Calculator", layout="wide", page_icon="⌚")
 st.title("Bid Calculator")
@@ -146,13 +147,28 @@ with st.form("bid_calc"):
         "Expected sale price (USD) *",
         min_value=1.0, step=5.0, format="%.2f",
         key="bid_calc_expected_sale",
-        help="What do you realistically think this will sell for on eBay? Use a comparable "
+        help="What do you realistically think this will sell for on that platform? Use a comparable "
              "listing as reference, or the Market Research estimate above.",
     )
     fx_rate = bc2.number_input(
         "JPY / USD rate *",
         min_value=1.0, value=150.0, step=1.0, format="%.1f",
         help="Current exchange rate. Check Google: '1 USD to JPY'.",
+    )
+
+    cfg = fees.load_cfg()
+    plat_ids = list(fees.platforms(cfg))
+    bp1, bp2 = st.columns(2)
+    sale_platform = bp1.selectbox(
+        "Selling on", plat_ids,
+        index=plat_ids.index("ebay") if "ebay" in plat_ids else 0,
+        format_func=lambda p: fees.platform_label(cfg, p),
+        help="Fees differ by platform — a cheaper one supports a higher max bid for the same sale price.",
+    )
+    sales_tax_pct = bp2.number_input(
+        "Buyer sales tax %", min_value=0.0, max_value=15.0,
+        value=fees.default_tax_pct(cfg), step=0.25, format="%.2f",
+        help="Platform fees are charged on sale price + tax.",
     )
 
     st.subheader("Estimated Costs on This Watch")
@@ -208,6 +224,8 @@ if submitted:
         "labor_hours_estimate": labor_hours,
         "repair_estimate_usd": repair_estimate,
         "pieces_in_shipment": pieces_in_shipment,
+        "platform": sale_platform,
+        "sales_tax_pct": sales_tax_pct,
         "custom_profit_targets": {"min": custom_min, "max": custom_max},
     }
     try:
@@ -269,7 +287,10 @@ if submitted:
     if breakdown:
         st.caption(
             f"Expected sale: ${breakdown.get('expected_sale_usd',0):.2f}  ·  "
-            f"eBay rate: {breakdown.get('ebay_effective_rate',0)*100:.1f}%  ·  "
+            f"{breakdown.get('platform_label', 'Platform')} fees: "
+            f"{breakdown.get('effective_rate',0)*100:.1f}%"
+            + (f" + \\${breakdown['flat_fee_usd']:.2f}" if breakdown.get("flat_fee_usd") else "")
+            + f" (tax {breakdown.get('sales_tax_pct',0):.1f}%)  ·  "
             f"Labor est.: ${breakdown.get('labor_estimate',0):.2f}  ·  "
             f"Repair est.: ${breakdown.get('repair_estimate',0):.2f}  ·  "
             f"FX: {fx_rate:.0f}"

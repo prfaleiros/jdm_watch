@@ -2,6 +2,7 @@ import io
 import csv
 import streamlit as st
 import api
+from watch_picker import watch_picker
 from constants import STATUS_LABELS
 
 st.set_page_config(page_title="eBay Draft Export", layout="wide", page_icon="⌚")
@@ -111,11 +112,8 @@ def _label(w):
 
 watch_opts = {w["watch_id"]: _label(w) for w in eligible}
 
-selected_ids = st.multiselect(
-    "Select watches to include",
-    list(watch_opts.keys()),
-    format_func=lambda wid: watch_opts[wid],
-)
+st.write("Select watches to include")
+selected_ids = watch_picker(eligible, key="drafts", multi=True, status_filter=False)
 
 if not selected_ids:
     st.info("Select at least one watch to generate the CSV.")
